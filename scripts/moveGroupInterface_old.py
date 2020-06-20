@@ -74,13 +74,40 @@ class MoveGroupInterface(object):
         # cur_states = robot.get_current_state()
         # print("============ Current state: ", cur_states)
 
+        ################################################################
+        self.z_command = 0
+        rospy.Subscriber('/spacenav/offset', Vector3, self.joy_callback)
+
         # TF listener and broadcaster
         self.listener = tf.TransformListener()
         self.br = tf.TransformBroadcaster()
 
+    def joy_callback(self, msg):
+        self.z_command = msg.z
+        # print(self.z_command)
 
-    def move_to_goal(self, pose_goal):
+    def move_to_start(self):
         # cur_pose = self.move_group.get_current_pose().pose
+
+        # # Desired ee pose
+        # pose_goal = geometry_msgs.msg.Pose()
+        # pose_goal.orientation = cur_pose.orientation
+        # pose_goal.position = cur_pose.position
+    
+        # Transform from panda_link0 to camera_depth_frame, PyKDL uses x,y,z,w for quaternion
+        base_depth_pose = PyKDL.Frame(PyKDL.Rotation.Quaternion(0.1463059, 0.3534126, -0.3534126, 0.8536941), PyKDL.Vector(0.217, 0.283, 0.283+0.05))
+
+        # Transform from camera_depth_frame to panda_link8
+        trans = self.look_up_transform('/camera_depth_frame', '/panda_link8')
+        depth_ee_pose = PyKDL.Frame(PyKDL.Rotation.Quaternion(trans.transform.rotation.x, trans.transform.rotation.y, 
+            trans.transform.rotation.z, trans.transform.rotation.w), 
+            PyKDL.Vector(trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z))
+
+        # Desired transfrom from link0 to link8
+        base_ee_pose = base_depth_pose*depth_ee_pose
+        pose_goal = posemath.toMsg(base_ee_pose)
+        # print(pose_goal.position)
+        # print(pose_goal.orientation)
 
         # while 1:
         #     self.br.sendTransform((pose_goal.position.x, pose_goal.position.y, pose_goal.position.z),
@@ -90,14 +117,7 @@ class MoveGroupInterface(object):
         #                     "panda_link0")
         #     rospy.sleep(0.01)
 
-        # Send goal
         self.move_group.set_pose_target(pose_goal)
-
-        # Visualize trajectory
-        # plan = self.move_group.plan()
-        # self.display_trajectory(plan)
-        # while 1:
-        #     continue
 
         ## Now, we call the planner to compute the plan and execute it.
         plan = self.move_group.go(wait=True)
@@ -113,6 +133,23 @@ class MoveGroupInterface(object):
         current_pose = self.move_group.get_current_pose().pose
         return all_close(pose_goal, current_pose, 0.01)
 
+    def move(self, pos, quat):
+        # Set target pose based on inputs
+        pose_goal = geometry_msgs.msg.Pose()
+        pose_goal.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+        pose_goal.position = Vector3(x=pos[0], y=pos[1], z=pos[2])
+        
+        # Visualize pose in Rviz
+        axis_length = 0.4
+        axis_radius = 0.05
+        self.markers.publishAxis(pose_goal, axis_length, axis_radius, 30.0) # pose, axis length, radius, lifetime
+
+        # Set target
+        self.move_group.set_pose_target(pose_goal)
+
+        # Plan and visualize trajectory
+        plan = self.move_group.plan()
+        self.display_trajectory(plan)
 
 
     def display_trajectory(self, plan):

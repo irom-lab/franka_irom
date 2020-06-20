@@ -27,7 +27,11 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-
+ 
+# -*- coding: utf-8 -*-
+import os
+import sys
+sys.dont_write_bytecode = True
 
 # Python includes
 import numpy

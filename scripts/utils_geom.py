@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+import os
+import sys
+sys.dont_write_bytecode = True
+
 import numpy as np
 
 from mpl_toolkits.mplot3d import Axes3D

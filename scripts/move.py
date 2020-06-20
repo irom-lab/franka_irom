@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import os
+import sys
+sys.dont_write_bytecode = True
 
 import rospy
 from geometry_msgs.msg import Vector3, TransformStamped
@@ -8,6 +12,8 @@ from moveGroupInterface import MoveGroupInterface
 from perceptionInterface import PerceptionInterface
 from utils_geom import *
 from visualization_msgs.msg import Marker
+import PyKDL
+from tf_conversions import posemath
 
 
 def main():
@@ -17,33 +23,33 @@ def main():
   moveGroup = MoveGroupInterface()
   perception = PerceptionInterface()
 
-
-  print("============ Press Enter to move ee for capturing point cloud ...")
+  print("============ Press Enter to move ee for capturing depth...")
   raw_input()
-  moveGroup.move_to_start()
+  depth_pose = PyKDL.Frame(PyKDL.Rotation.Quaternion(-0.9239554, 0.3824994, 0.0003046, 0.0007358), 
+                              PyKDL.Vector(0.25, -0.30, 0.40))
+  moveGroup.move_to_goal(posemath.toMsg(depth_pose))
 
-  print("============ Press Enter to capture point cloud ...")
+  print("============ Press Enter to move ee to idle position...")
   raw_input()
-  trans = moveGroup.look_up_transform('/panda_link0', '/camera_depth_optical_frame')
-  
-  pcl, contact_points_list = perception.capture_pcl(trans)
-  print("Point cloud saved!")
+  idle_pose = PyKDL.Frame(PyKDL.Rotation.Quaternion(-0.9239554, 0.3824994, 0.0003046, 0.0007358), 
+                              PyKDL.Vector(0.30, 0.00, 0.40))
+  moveGroup.move_to_goal(posemath.toMsg(idle_pose))
 
-  print("============ Press Enter to sample a contact point and a grasp ...")
-  idx = int(np.random.choice(np.arange(len(contact_points_list))))
-  print('Chosen idx: ', idx)
+  # print("============ Press Enter to sample a contact point and a grasp ...")
+  # idx = int(np.random.choice(np.arange(len(contact_points_list))))
+  # print('Chosen idx: ', idx)
 
-  contact_point = np.asarray(pcl.points)[idx]
-  contact_normal = np.asarray(pcl.normals)[idx]
-  print(contact_point)
-  print(contact_normal)
+  # contact_point = np.asarray(pcl.points)[idx]
+  # contact_normal = np.asarray(pcl.normals)[idx]
+  # print(contact_point)
+  # print(contact_normal)
 
-  graspOrn = vecs2quat(np.array([0,0,1]), contact_normal)
-  offsetBefore = 0.20
-  graspPosBefore = contact_point - contact_normal*offsetBefore
-  print(graspPosBefore)
+  # graspOrn = vecs2quat(np.array([0,0,1]), contact_normal)
+  # offsetBefore = 0.20
+  # graspPosBefore = contact_point - contact_normal*offsetBefore
+  # print(graspPosBefore)
 
-  moveGroup.move(graspPosBefore, graspOrn)
+  # moveGroup.move(graspPosBefore, graspOrn)
 
   while 1:
     continue
