@@ -1,0 +1,33 @@
+<?xml version="1.0" ?>
+<launch>
+  <arg name="robot_ip" default="172.16.0.2"/>
+  <arg name="load_gripper" default="true" />
+  <include file="$(find franka_control)/launch/franka_control.launch" >
+    <arg name="robot_ip" value="$(arg robot_ip)" />
+    <arg name="load_gripper" value="$(arg load_gripper)" />
+  </include>
+
+  <include file="$(find panda_moveit_config)/launch/panda_moveit.launch">
+    <arg name="load_gripper" value="$(arg load_gripper)" />
+  </include>
+
+  <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="position_joint_trajectory_controller"/>
+
+  <node name="move" pkg="franka_irom" type="move.py" output="screen"/>
+  <node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_irom)/rviz/robot.rviz"/>
+
+  <node pkg="tf" type="static_transform_publisher" name="ee_to_cam" args="0.0353 -0.0352 -0.0461 -0.0014 0.0075 0.7072 0.7070 panda_EE camera_color_optical_frame 100"/>
+  <node pkg="tf" type="static_transform_publisher" name="cam" args="0.015 0.0001 0 0.507 -0.492 0.508 0.492 camera_color_optical_frame camera_link 100"/>
+
+</launch>
+
+
+  <!-- translation: 
+    x: 0.0353711005403
+    y: -0.0352479110531
+    z: -0.0460809862125
+  rotation: 
+    x: -0.00142170594875
+    y: 0.00745557776779
+    z: 0.70717768807
+    w: 0.706995127712 -->

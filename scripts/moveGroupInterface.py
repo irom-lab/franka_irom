@@ -31,28 +31,17 @@ class MoveGroupInterface(object):
         moveit_commander.roscpp_initialize(sys.argv)
         rospy.init_node('move_group_interface', anonymous=True)
 
-        ## Instantiate a `RobotCommander`_ object. Provides information such as the robot's
-        ## kinematic model and the robot's current joint states
+
         self.robot = moveit_commander.RobotCommander()
-
-        ## Instantiate a `PlanningSceneInterface`_ object.  This provides a remote interface
-        ## for getting, setting, and updating the robot's internal understanding of the
-        ## surrounding world:
         self.scene = moveit_commander.PlanningSceneInterface()
-
-        ## Instantiate a `MoveGroupCommander`_ object.  This object is an interface
-        ## to a planning group (group of joints).  In this tutorial the group is the primary
-        ## arm joints in the Panda robot, so we set the group's name to "panda_arm".
-        ## If you are using a different robot, change this value to the name of your robot
-        ## arm planning group.
-        ## This interface can be used to plan and execute motions:
         group_name = "panda_arm"
         self.move_group = moveit_commander.MoveGroupCommander(group_name)
 
         ## Create a `DisplayTrajectory`_ ROS publisher
-        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
-                                                    moveit_msgs.msg.DisplayTrajectory,
-                                                    queue_size=20)
+        self.display_trajectory_publisher = rospy.Publisher(
+            					'/move_group/display_planned_path',
+                                moveit_msgs.msg.DisplayTrajectory,
+                                queue_size=20)
 
         # For visualization in Rviz
         self.markers = RvizMarkers('/panda_link0', 'visualization_marker')
