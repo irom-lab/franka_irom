@@ -10,32 +10,51 @@ import time
 import copy
 
 import rospy
-import tf
+# import tf
+import tf.transformations as tft
 import PyKDL
 import ropy as rp
-from std_msgs.msg import String
-from actionlib_msgs.msg import GoalStatusArray
+from std_msgs.msg import Empty, String
+from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Vector3, Quaternion, TransformStamped, Twist, Pose
 from franka_msgs.msg import FrankaState, Errors as FrankaErrors
-from tf_conversions import posemath
+import tf_helpers as tfh
 from rviz_tools import RvizMarkers
 
 from franka_irom_controllers.panda_commander import PandaCommander
+from franka_irom_controllers.control_switcher import ControlSwitcher
 
 
-class GraspEnv(object):
+class PushEnv(object):
 	def __init__(self):
-		super(GraspEnv, self).__init__()
+		super(PushEnv, self).__init__()
 
 		# Initialize rospy node
 		rospy.init_node('grasp_env', anonymous=True)
+
 
 		# Set up panda moveit commander, pose control
 		self.pc = PandaCommander(group_name='panda_arm')
 
 		# Set up ropy and joint velocity controller
 		self.panda = rp.Panda()
+		self.max_velo = 1.0  # not using rn
+		self.curr_velocity_publish_rate = 100.0  # for libfranka
 		self.joint_velocity_pub = rospy.Publisher('/cartesian_velocity_controller/cartesian_velocity', Twist, queue_size=1)
+		self.curr_velo = Twist()
+		self._in_velo_loop = False
+
+		# Set up switch between moveit and velocity, start with moveit
+		self.cs = ControlSwitcher({
+	  		'moveit': 'position_joint_trajectory_controller',
+			'velocity': 'cartesian_velocity_node_controller'})
+		self.cs.switch_controller('moveit')
+
+		# Set up update with inference
+		self.update_rate = 5.0  # for inference
+		# update_topic_name = '~/update'
+		# self.update_pub = rospy.Publisher(update_topic_name, Empty, queue_size=1)
+		# rospy.Subscriber(update_topic_name, Empty, self.__update_callback, queue_size=1)
 
 		# Subscribe to robot state
 		self.robot_state = None
@@ -45,8 +64,8 @@ class GraspEnv(object):
 		self.markers = RvizMarkers('/panda_link0', 'visualization_marker')
 
 		# Errors
-        self.ROBOT_ERROR_DETECTED = False
-        self.BAD_UPDATE = False
+		self.ROBOT_ERROR_DETECTED = False
+		self.BAD_UPDATE = False
 
 		# # TF listener and broadcaster
 		# self.listener = tf.TransformListener()
@@ -74,19 +93,99 @@ class GraspEnv(object):
 				self.ROBOT_ERROR_DETECTED = True
 
 
+	# def __update_callback(self, msg):
+	# 	# Update the MVP Controller asynchronously
+	# 	if not self._in_velo_loop:
+	# 		# Stop the callback lagging behind
+	# 		return
+
+	# 	# TODO: change to inference
+
+	# 	res = self.entropy_srv()
+	# 	if not res.success:
+	# 		# Something has gone wrong, 0 velocity.
+	# 		self.BAD_UPDATE = True
+	# 		self.curr_velo = Twist()
+	# 		return
+
+	# 	self.viewpoints = res.no_viewpoints
+
+	# 	# Calculate the required angular velocity to match the best grasp.
+	# 	q = tfh.quaternion_to_list(res.best_grasp.pose.orientation)
+	# 	curr_R = np.array(self.robot_state.O_T_EE).reshape((4, 4)).T
+	# 	cpq = tft.quaternion_from_matrix(curr_R)
+	# 	dq = tft.quaternion_multiply(q, tft.quaternion_conjugate(cpq))
+	# 	d_euler = tft.euler_from_quaternion(dq)
+	# 	res.velocity_cmd.angular.z = d_euler[2]
+
+	# 	self.best_grasp = res.best_grasp
+	# 	self.curr_velo = res.velocity_cmd
+
+	# 	tfh.publish_pose_as_transform(self.best_grasp.pose, 'panda_link0', 'G', 0.05)
+
+
+	def __trigger_update(self):
+		# Let ROS handle the threading for me.
+		self.update_pub.publish(Empty())
+
+
+	def stop(self):
+		self.pc.stop()
+		self.curr_velo = Twist()
+		self.curr_velo_pub.publish(self.curr_velo)
+
+
 	def go(self):
 		
 		print("============ Press Enter to move to initial pose...")
 		raw_input()
-		start_pose = [0.20, -0.30, 0.40, -0.9239554, 0.3824994, 0.0003046, 0.0007358]
-		self.pc.goto_pose(start_pose, velocity=0.2)
-		self.pc.set_gripper(0.1)
+		start_pose = [0.35, 0.0, 0.18, 0.966003, 0.0002059, 0.2585298, 0.0007693]  # TODO, offset
+		self.pc.goto_pose(start_pose, velocity=0.1)
+		self.pc.set_gripper(0.04)
+		rospy.sleep(3.0)
 
-		#   print("============ Press Enter to take depth image and infer grasp pose...")
-		#   print("============ Press Enter to execute pose...")
-		#   print("============ Press Enter to reach down...")
-		#   print("============ Press Enter to grasp...")
-		#   print("============ Press Enter to lift...")
+		print("============ Press Enter to switch to velocity control...")
+		raw_input()
+		self.cs.switch_controller('velocity')
+		ctr = 0
+		r = rospy.Rate(self.curr_velocity_publish_rate)
+		self._in_velo_loop = True
+		# while not rospy.is_shutdown():
+		while 1:
+			# if self.ROBOT_ERROR_DETECTED or self.BAD_UPDATE:
+			# 	return False
+
+			# Check ee x pos
+			if self.robot_state.O_T_EE[-4] > 0.6:
+				self.stop()
+				rospy.sleep(0.1)
+				break
+
+			ctr += 1
+			# if ctr >= self.curr_velocity_publish_rate/self.update_rate:
+			# 	ctr = 0
+			# 	self.__trigger_update()
+
+			# Cartesian Contact
+			if any(self.robot_state.cartesian_contact):
+				self.stop()
+				rospy.logerr('Detected cartesian contact during velocity control loop.')
+				break
+
+			v = Twist()
+			# v.linear.x = self.curr_velo.linear.x * self.max_velo
+			# v.linear.y = self.curr_velo.linear.y * self.max_velo
+			# v.linear.z = self.curr_velo.linear.z * self.max_velo
+			v.linear.x = 0.02-0.02*ctr/1000  # die in 10s
+			v.linear.y = 0
+			v.linear.z = 0
+			# v.angular = self.curr_velo.angular
+			v.angular = Vector3(x=0,y=0,z=0)
+
+			self.curr_velo_pub.publish(v)
+			r.sleep()
+
+		# Stop criteria
 
 		print("============ Press Enter to home...")
 		raw_input()
@@ -102,8 +201,8 @@ class GraspEnv(object):
 
 
 if __name__ == '__main__':
-	graspEnv = GraspEnv()
-	graspEnv.go()
+	pushEnv = PushEnv()
+	pushEnv.go()
 
 	# def move_to_goal(self, pose_goal, horizon):
 	# 	"""
@@ -177,25 +276,3 @@ if __name__ == '__main__':
 	# 		jointDot = np.zeros((7,1))
 
 	# 	return jointDot
-
-
-def all_close(goal, actual, tolerance):
-	"""
-	Convenience method for testing if a list of values are within a tolerance of their counterparts in another list
-	@param: goal       A list of floats, a Pose or a PoseStamped
-	@param: actual     A list of floats, a Pose or a PoseStamped
-	@param: tolerance  A float
-	@returns: bool
-	"""
-	if type(goal) is list:
-		for index in range(len(goal)):
-			if abs(actual[index] - goal[index]) > tolerance:
-				return False
-
-	elif type(goal) is geometry_msgs.msg.PoseStamped:
-		return all_close(goal.pose, actual.pose, tolerance)
-
-	elif type(goal) is geometry_msgs.msg.Pose:
-		return all_close(pose_to_list(goal), pose_to_list(actual), tolerance)
-
-	return True
