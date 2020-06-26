@@ -20,6 +20,7 @@ from geometry_msgs.msg import Vector3, Quaternion, TransformStamped, Twist, Pose
 from franka_msgs.msg import FrankaState, Errors as FrankaErrors
 import tf_helpers as tfh
 from rviz_tools import RvizMarkers
+from utils_geom import quatMult, euler2quat
 
 from franka_irom_controllers.panda_commander import PandaCommander
 from franka_irom_controllers.control_switcher import ControlSwitcher
@@ -32,7 +33,6 @@ class PushEnv(object):
 		# Initialize rospy node
 		rospy.init_node('grasp_env', anonymous=True)
 
-
 		# Set up panda moveit commander, pose control
 		self.pc = PandaCommander(group_name='panda_arm')
 
@@ -40,7 +40,7 @@ class PushEnv(object):
 		self.panda = rp.Panda()
 		self.max_velo = 1.0  # not using rn
 		self.curr_velocity_publish_rate = 100.0  # for libfranka
-		self.joint_velocity_pub = rospy.Publisher('/cartesian_velocity_controller/cartesian_velocity', Twist, queue_size=1)
+		self.curr_velo_pub = rospy.Publisher('/cartesian_velocity_node_controller/cartesian_velocity', Twist, queue_size=1)
 		self.curr_velo = Twist()
 		self._in_velo_loop = False
 
@@ -51,10 +51,10 @@ class PushEnv(object):
 		self.cs.switch_controller('moveit')
 
 		# Set up update with inference
-		self.update_rate = 5.0  # for inference
-		# update_topic_name = '~/update'
-		# self.update_pub = rospy.Publisher(update_topic_name, Empty, queue_size=1)
-		# rospy.Subscriber(update_topic_name, Empty, self.__update_callback, queue_size=1)
+		self.update_rate = 100.0  # for inference
+		update_topic_name = '~/update'
+		self.update_pub = rospy.Publisher(update_topic_name, Empty, queue_size=1)
+		rospy.Subscriber(update_topic_name, Empty, self.__update_callback, queue_size=1)
 
 		# Subscribe to robot state
 		self.robot_state = None
@@ -93,35 +93,35 @@ class PushEnv(object):
 				self.ROBOT_ERROR_DETECTED = True
 
 
-	# def __update_callback(self, msg):
-	# 	# Update the MVP Controller asynchronously
-	# 	if not self._in_velo_loop:
-	# 		# Stop the callback lagging behind
-	# 		return
+	def __update_callback(self, msg):
+		# Update the MVP Controller asynchronously
+		if not self._in_velo_loop:
+			# Stop the callback lagging behind
+			return
 
-	# 	# TODO: change to inference
+		# TODO: change to inference
 
-	# 	res = self.entropy_srv()
-	# 	if not res.success:
-	# 		# Something has gone wrong, 0 velocity.
-	# 		self.BAD_UPDATE = True
-	# 		self.curr_velo = Twist()
-	# 		return
+		# res = self.entropy_srv()
+		# if not res.success:
+		# 	# Something has gone wrong, 0 velocity.
+		# 	self.BAD_UPDATE = True
+		# 	self.curr_velo = Twist()
+		# 	return
 
-	# 	self.viewpoints = res.no_viewpoints
+		# self.viewpoints = res.no_viewpoints
 
-	# 	# Calculate the required angular velocity to match the best grasp.
-	# 	q = tfh.quaternion_to_list(res.best_grasp.pose.orientation)
-	# 	curr_R = np.array(self.robot_state.O_T_EE).reshape((4, 4)).T
-	# 	cpq = tft.quaternion_from_matrix(curr_R)
-	# 	dq = tft.quaternion_multiply(q, tft.quaternion_conjugate(cpq))
-	# 	d_euler = tft.euler_from_quaternion(dq)
-	# 	res.velocity_cmd.angular.z = d_euler[2]
+		# # Calculate the required angular velocity to match the best grasp.
+		# q = tfh.quaternion_to_list(res.best_grasp.pose.orientation)
+		# curr_R = np.array(self.robot_state.O_T_EE).reshape((4, 4)).T
+		# cpq = tft.quaternion_from_matrix(curr_R)
+		# dq = tft.quaternion_multiply(q, tft.quaternion_conjugate(cpq))
+		# d_euler = tft.euler_from_quaternion(dq)
+		# res.velocity_cmd.angular.z = d_euler[2]
 
-	# 	self.best_grasp = res.best_grasp
-	# 	self.curr_velo = res.velocity_cmd
+		# self.best_grasp = res.best_grasp
+		# self.curr_velo = res.velocity_cmd
 
-	# 	tfh.publish_pose_as_transform(self.best_grasp.pose, 'panda_link0', 'G', 0.05)
+		# tfh.publish_pose_as_transform(self.best_grasp.pose, 'panda_link0', 'G', 0.05)
 
 
 	def __trigger_update(self):
@@ -139,7 +139,11 @@ class PushEnv(object):
 		
 		print("============ Press Enter to move to initial pose...")
 		raw_input()
-		start_pose = [0.35, 0.0, 0.18, 0.966003, 0.0002059, 0.2585298, 0.0007693]  # TODO, offset
+		# startQuat = quatMult(array([0.966003, 0.0002059, 0.2585298, 0.0007693]), euler2quat([np.pi/4,0,0]))
+		# print(startQuat)
+
+		start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # TODO, offset
+		# start_pose = [0.50, 0.0, 0.18, 0.966003, 0.0002059, 0.2585298, 0.0007693]  # TODO, offset
 		self.pc.goto_pose(start_pose, velocity=0.1)
 		self.pc.set_gripper(0.04)
 		rospy.sleep(3.0)
@@ -162,9 +166,9 @@ class PushEnv(object):
 				break
 
 			ctr += 1
-			# if ctr >= self.curr_velocity_publish_rate/self.update_rate:
-			# 	ctr = 0
-			# 	self.__trigger_update()
+			if ctr >= self.curr_velocity_publish_rate/self.update_rate:
+				ctr = 0
+				self.__trigger_update()
 
 			# Cartesian Contact
 			if any(self.robot_state.cartesian_contact):
@@ -176,7 +180,8 @@ class PushEnv(object):
 			# v.linear.x = self.curr_velo.linear.x * self.max_velo
 			# v.linear.y = self.curr_velo.linear.y * self.max_velo
 			# v.linear.z = self.curr_velo.linear.z * self.max_velo
-			v.linear.x = 0.02-0.02*ctr/1000  # die in 10s
+			# v.linear.x = max(0.02-0.02*ctr/500, 0)  # die in 5s
+			v.linear.x = 0.01
 			v.linear.y = 0
 			v.linear.z = 0
 			# v.angular = self.curr_velo.angular
@@ -189,6 +194,7 @@ class PushEnv(object):
 
 		print("============ Press Enter to home...")
 		raw_input()
+		self.cs.switch_controller('moveit')
 		start_pose = [0.30, 0.0, 0.40, -0.9239554, 0.3824994, 0.0003046, 0.0007358]
 		self.pc.goto_pose(start_pose, velocity=0.2)
 		self.pc.set_gripper(0.1)

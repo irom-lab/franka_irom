@@ -45,8 +45,8 @@ class GraspEnv(object):
 		self.markers = RvizMarkers('/panda_link0', 'visualization_marker')
 
 		# Errors
-        self.ROBOT_ERROR_DETECTED = False
-        self.BAD_UPDATE = False
+		self.ROBOT_ERROR_DETECTED = False
+		self.BAD_UPDATE = False
 
 		# # TF listener and broadcaster
 		# self.listener = tf.TransformListener()
