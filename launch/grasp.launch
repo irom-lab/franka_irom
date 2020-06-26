@@ -9,18 +9,22 @@
 		<arg name="load_gripper" value="$(arg load_gripper)" />
 	</include>
 
-	<!-- Moveit, to be removed -->
+	<!-- Set some project specific defaults for the panda arm. -->
+	<node name="set_robot_defaults" pkg="franka_irom_controllers" type="set_panda_defaults.py" respawn="false" output="screen"/>
+
+	<!-- Moveit for pose control-->
 	<include file="$(find panda_moveit_config)/launch/panda_moveit.launch">
 		<arg name="load_gripper" value="$(arg load_gripper)" />
 	</include>
-
-	<!-- Controller -->
 	<node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="position_joint_trajectory_controller"/>
-	<!-- <rosparam command="load" file="$(find franka_irom)/config/franka_controllers.yaml" />
-	<nodename="controller_spawner_cv" pkg="controller_manager" type="spawner" respawn="false" output="screen"  args="cartesian_velocity_node_controller"/> -->
+
+	<!-- Velocity controller for continuous task -->
+	<include file="$(find franka_irom_controllers)/launch/cartesian_velocity_node_controller.launch">
+		<arg name="stopped" value="true" />
+	</include>
 
 	<!-- Main script-->
-	<node name="move" pkg="franka_irom" type="move.py" output="screen"/>
+	<node name="move" pkg="franka_irom" type="graspEnv.py" output="screen"/>
 
 	<!-- Rviz -->
 	<node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_irom)/rviz/robot.rviz"/>
