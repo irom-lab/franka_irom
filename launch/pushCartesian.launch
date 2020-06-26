@@ -19,12 +19,12 @@
 	<node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="position_joint_trajectory_controller"/>
 
 	<!-- Velocity controller for continuous task -->
-	<include file="$(find franka_irom_controllers)/launch/joint_velocity_node_controller.launch">
+	<include file="$(find franka_irom_controllers)/launch/cartesian_velocity_node_controller.launch">
 		<arg name="stopped" value="true" />
 	</include>
 
 	<!-- Main script-->
-	<node name="move" pkg="franka_irom" type="pushEnv.py" output="screen"/>
+	<node name="move" pkg="franka_irom" type="pushCartesianEnv.py" output="screen"/>
 
 	<!-- Rviz -->
 	<node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_irom)/rviz/robot.rviz"/>

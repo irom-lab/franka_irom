@@ -14,13 +14,13 @@ import rospy
 import tf.transformations as tft
 import PyKDL
 import ropy as rp
-from std_msgs.msg import Empty, String, Float64MultiArray
+from std_msgs.msg import Empty, String
 from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Vector3, Quaternion, TransformStamped, Twist, Pose
 from franka_msgs.msg import FrankaState, Errors as FrankaErrors
 import tf_helpers as tfh
 from rviz_tools import RvizMarkers
-from utils_geom import quatMult, euler2quat, log_rot
+from utils_geom import quatMult, euler2quat
 
 from franka_irom_controllers.panda_commander import PandaCommander
 from franka_irom_controllers.control_switcher import ControlSwitcher
@@ -40,14 +40,14 @@ class PushEnv(object):
 		self.panda = rp.Panda()
 		self.max_velo = 1.0  # not using rn
 		self.curr_velocity_publish_rate = 100.0  # for libfranka
-		self.curr_velo_pub = rospy.Publisher('/joint_velocity_node_controller/joint_velocity', Float64MultiArray, queue_size=1)
-		self.curr_velo = Float64MultiArray()
+		self.curr_velo_pub = rospy.Publisher('/cartesian_velocity_node_controller/cartesian_velocity', Twist, queue_size=1)
+		self.curr_velo = Twist()
 		self._in_velo_loop = False
 
 		# Set up switch between moveit and velocity, start with moveit
 		self.cs = ControlSwitcher({
 	  		'moveit': 'position_joint_trajectory_controller',
-			'velocity': 'joint_velocity_node_controller'})
+			'velocity': 'cartesian_velocity_node_controller'})
 		self.cs.switch_controller('moveit')
 
 		# Set up update with inference
@@ -70,8 +70,6 @@ class PushEnv(object):
 		# # TF listener and broadcaster
 		# self.listener = tf.TransformListener()
 		# self.br = tf.TransformBroadcaster()
-
-		# self.__recover_robot_from_error()
 
 
 	def __recover_robot_from_error(self):
@@ -132,8 +130,8 @@ class PushEnv(object):
 
 
 	def stop(self):
-		self.curr_velo = Float64MultiArray()
-		self.curr_velo.data = [0., 0., 0., 0., 0., 0., 0.]
+		self.pc.stop()
+		self.curr_velo = Twist()
 		self.curr_velo_pub.publish(self.curr_velo)
 
 
@@ -144,7 +142,7 @@ class PushEnv(object):
 		# startQuat = quatMult(array([0.966003, 0.0002059, 0.2585298, 0.0007693]), euler2quat([np.pi/4,0,0]))
 		# print(startQuat)
 
-		start_pose = [0.40, 0.0, 0.30, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # TODO, offset
+		start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # TODO, offset
 		# start_pose = [0.50, 0.0, 0.18, 0.966003, 0.0002059, 0.2585298, 0.0007693]  # TODO, offset
 		self.pc.goto_pose(start_pose, velocity=0.1)
 		self.pc.set_gripper(0.04)
@@ -156,36 +154,13 @@ class PushEnv(object):
 		ctr = 0
 		r = rospy.Rate(self.curr_velocity_publish_rate)
 		self._in_velo_loop = True
-
-		# # Get current joint angle, tested
-		# self.panda.q = np.array(self.robot_state.q)
-
-		# Get current ee pose
-		wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')  # column major
-
-		# Set desired pose
-		wTep = np.copy(wTe)
-		wTep[0,3] += 0.05  # move 5cm in x
-
-		arrived = False
-		while not arrived:
+		# while not rospy.is_shutdown():
+		while 1:
 			# if self.ROBOT_ERROR_DETECTED or self.BAD_UPDATE:
 			# 	return False
 
-			# Get current joint angles
-			self.panda.q = np.array(self.robot_state.q)
-
-			# Update current ee pose
-			wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')  # column major
-
-			# Desired end-effecor spatial velocity
-			v, arrived = rp.p_servo(wTe, wTep, gain=1, threshold=0.05)
-			
-			# Solve for the joint velocities dq
-			dq = np.matmul(np.linalg.pinv(self.panda.Je), v)
-
 			# Stopping criteria: check ee_x pos
-			if self.robot_state.O_T_EE[-4] > 0.7:
+			if self.robot_state.O_T_EE[-4] > 0.6:
 				self.stop()
 				rospy.sleep(0.1)
 				break
@@ -202,69 +177,34 @@ class PushEnv(object):
 				rospy.logerr('Detected cartesian contact during velocity control loop.')
 				break
 
-			# Send joint velocity cmd
-			v = Float64MultiArray()
-			v.data = dq
+			# Send cartesian velocity cmd
+			v = Twist()
+			# v.linear.x = self.curr_velo.linear.x * self.max_velo
+			# v.linear.y = self.curr_velo.linear.y * self.max_velo
+			# v.linear.z = self.curr_velo.linear.z * self.max_velo
+			# v.linear.x = max(0.02-0.02*ctr/500, 0)  # die in 5s
+			v.linear.x = 0.01
+			v.linear.y = 0
+			v.linear.z = 0
+			# v.angular = self.curr_velo.angular
+			v.angular = Vector3(x=0,y=0,z=0)
+
 			self.curr_velo_pub.publish(v)
 			r.sleep()
-		
-		# Send zero joint velocity
-		self.stop()
-		self.cs.switch_controller('moveit')  # need to switch right away, otherwise communication reflex error?
-		rospy.sleep(0.1)
+
 
 		print("============ Press Enter to home...")
 		raw_input()
+		self.cs.switch_controller('moveit')
 		start_pose = [0.30, 0.0, 0.40, -0.9239554, 0.3824994, 0.0003046, 0.0007358]
 		self.pc.goto_pose(start_pose, velocity=0.2)
 		self.pc.set_gripper(0.1)
-		self.pc.stop()
 
 		# if not grasp_ret or self.ROBOT_ERROR_DETECTED:
 		# 	rospy.logerr('Something went wrong, aborting this run')
 		# 	if self.ROBOT_ERROR_DETECTED:
 		# 		self.__recover_robot_from_error()
 		# 	continue
-
-
-	# def traj_time_scaling(self, startPos, endPos, numSteps):
-	# 	trajPos = np.zeros((numSteps, 3))
-	# 	for step in range(numSteps):
-	# 		s = 3 * (1.0 * step / numSteps) ** 2 - 2 * (1.0 * step / numSteps) ** 3
-	# 		trajPos[step] = (endPos-startPos)*s+startPos
-	# 	return trajPos
-
-
-	# def traj_tracking_vel(self, targetPos, targetQuat, posGain=20, velGain=5):
-	# 	eePos, eeQuat = self._panda.get_ee()
-
-	# 	eePosError = targetPos - eePos
-	# 	# eeOrnError = log_rot(quat2rot(targetQuat)@(quat2rot(eeQuat).T))  # in spatial frame
-	# 	eeOrnError = log_rot(quat2rot(targetQuat).dot((quat2rot(eeQuat).T)))  # in spatial frame
-
-	# 	jointPoses = self._panda.get_arm_joints() + [0,0,0]  # add fingers
-	# 	eeState = p.getLinkState(self._pandaId,
-	# 						self._panda.pandaEndEffectorLinkIndex,
-	# 						computeLinkVelocity=1,
-	# 						computeForwardKinematics=1)
-	# 	# Get the Jacobians for the CoM of the end-effector link. Note that in this example com_rot = identity, and we would need to use com_rot.T * com_trn. The localPosition is always defined in terms of the link frame coordinates.
-	# 	zero_vec = [0.0] * len(jointPoses)
-	# 	jac_t, jac_r = p.calculateJacobian(self._pandaId, 
-	# 								 	self._panda.pandaEndEffectorLinkIndex, 
-	# 								  	eeState[2], 
-	# 								   	jointPoses, 
-	# 									zero_vec, 
-	# 									zero_vec)  # use localInertialFrameOrientation
-	# 	jac_sp = full_jacob_pb(jac_t, jac_r)[:, :7]  # 6x10 -> 6x7, ignore last three columns
-		
-	# 	try:
-	# 		# jointDot = np.linalg.pinv(jac_sp)@(np.hstack((posGain*eePosError, velGain*eeOrnError)).reshape(6,1))  # pseudo-inverse
-	# 		jointDot = np.linalg.pinv(jac_sp).dot((np.hstack((posGain*eePosError, velGain*eeOrnError)).reshape(6,1)))  # pseudo-inverse
-	# 	except np.linalg.LinAlgError:
-	# 		jointDot = np.zeros((7,1))
-
-	# 	return jointDot
-
 
 
 if __name__ == '__main__':
@@ -306,4 +246,40 @@ if __name__ == '__main__':
 	# 		# return all_close(pose_goal, current_pose, 0.01)
 
 
+	# def traj_time_scaling(self, startPos, endPos, numSteps):
+	# 	trajPos = np.zeros((numSteps, 3))
+	# 	for step in range(numSteps):
+	# 		s = 3 * (1.0 * step / numSteps) ** 2 - 2 * (1.0 * step / numSteps) ** 3
+	# 		trajPos[step] = (endPos-startPos)*s+startPos
+	# 	return trajPos
 
+
+	# def traj_tracking_vel(self, targetPos, targetQuat, posGain=20, velGain=5):
+	# 	eePos, eeQuat = self._panda.get_ee()
+
+	# 	eePosError = targetPos - eePos
+	# 	# eeOrnError = log_rot(quat2rot(targetQuat)@(quat2rot(eeQuat).T))  # in spatial frame
+	# 	eeOrnError = log_rot(quat2rot(targetQuat).dot((quat2rot(eeQuat).T)))  # in spatial frame
+
+	# 	jointPoses = self._panda.get_arm_joints() + [0,0,0]  # add fingers
+	# 	eeState = p.getLinkState(self._pandaId,
+	# 						self._panda.pandaEndEffectorLinkIndex,
+	# 						computeLinkVelocity=1,
+	# 						computeForwardKinematics=1)
+	# 	# Get the Jacobians for the CoM of the end-effector link. Note that in this example com_rot = identity, and we would need to use com_rot.T * com_trn. The localPosition is always defined in terms of the link frame coordinates.
+	# 	zero_vec = [0.0] * len(jointPoses)
+	# 	jac_t, jac_r = p.calculateJacobian(self._pandaId, 
+	# 								 	self._panda.pandaEndEffectorLinkIndex, 
+	# 								  	eeState[2], 
+	# 								   	jointPoses, 
+	# 									zero_vec, 
+	# 									zero_vec)  # use localInertialFrameOrientation
+	# 	jac_sp = full_jacob_pb(jac_t, jac_r)[:, :7]  # 6x10 -> 6x7, ignore last three columns
+		
+	# 	try:
+	# 		# jointDot = np.linalg.pinv(jac_sp)@(np.hstack((posGain*eePosError, velGain*eeOrnError)).reshape(6,1))  # pseudo-inverse
+	# 		jointDot = np.linalg.pinv(jac_sp).dot((np.hstack((posGain*eePosError, velGain*eeOrnError)).reshape(6,1)))  # pseudo-inverse
+	# 	except np.linalg.LinAlgError:
+	# 		jointDot = np.zeros((7,1))
+
+	# 	return jointDot
