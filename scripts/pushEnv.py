@@ -165,7 +165,7 @@ class PushEnv(object):
 
 		# Set desired pose
 		wTep = np.copy(wTe)
-		wTep[0,3] += 0.05  # move 5cm in x
+		wTep[0,3] += 0.10  # move 5cm in x
 
 		arrived = False
 		while not arrived:
@@ -178,8 +178,8 @@ class PushEnv(object):
 			# Update current ee pose
 			wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')  # column major
 
-			# Desired end-effecor spatial velocity
-			v, arrived = rp.p_servo(wTe, wTep, gain=1, threshold=0.05)
+			# Desired end-effecor spatial velocity, threshold 0.01 - 0.493 final as 0.50 target
+			v, arrived = rp.p_servo(wTe, wTep, gain=0.5, threshold=0.01)
 			
 			# Solve for the joint velocities dq
 			dq = np.matmul(np.linalg.pinv(self.panda.Je), v)

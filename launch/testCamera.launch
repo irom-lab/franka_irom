@@ -1,0 +1,20 @@
+<?xml version="1.0" ?>
+<launch>
+
+	<!-- Kinect -->
+	<include file="$(find azure_kinect_ros_driver)/launch/driver.launch">
+		<arg name="depth_mode" value="NFOV_UNBINNED" />
+		<arg name="color_enabled" value="false" />
+		<arg name="fps" value="5" />
+		<arg name="point_cloud" value="false" />
+	</include>
+
+	<!-- Main script-->
+	<node name="move" pkg="franka_irom" type="cameraEnv.py" output="screen"/>
+
+	<!-- Rviz -->
+	<node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_irom)/rviz/robot.rviz"/>
+
+
+</launch>
+
