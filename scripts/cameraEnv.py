@@ -52,7 +52,7 @@ class CameraEnv(object):
 		self.actor.load_state_dict(torch.load(
 			'/home/allen/PAC-Imitation/model/grasp_bc_12_550.pt', 	
 			map_location=torch.device('cpu')))
-		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_7/train_details'
+		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
 		training_details_dic = torch.load(training_details_dic_path)
 		_, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
@@ -111,7 +111,9 @@ class CameraEnv(object):
 
 		# Extract target yaw
 		target_yawEnc = pred[3:5]
-		target_yaw = wrap2pi(np.arctan2(target_yawEnc[0], target_yawEnc[1])-np.pi)
+		# target_yaw = wrap2pi(np.arctan2(target_yawEnc[0], target_yawEnc[1])-np.pi)
+		target_yaw = np.arctan2(target_yawEnc[0], target_yawEnc[1])
+		target_yaw = wrap2halfPi(target_yaw)
 
 		# Respond
 		res = GraspInferResponse()
@@ -119,6 +121,12 @@ class CameraEnv(object):
 		res.yaw = target_yaw
 		return res
 
+def wrap2halfPi(angle):  # assume input in [-pi, pi]
+	if angle < -np.pi/2:
+		return angle + np.pi 
+	elif angle > np.pi/2:
+		return angle - np.pi
+	return angle
 
 def wrap2pi(angle):
 	if angle < -np.pi:

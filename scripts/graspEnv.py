@@ -87,40 +87,40 @@ class GraspEnv(object):
 		# print(startQuat)
 
 		# Add table as collision
-		# print("============ Press Enter to add table...")
-		# raw_input()
-		# self.pc.add_table()
+		print("============ Press Enter to add table...")
+		raw_input()
+		self.pc.add_table()
 
 		# print("============ Press Enter to move to initial pose...")
 		# raw_input()
 		# start_joint_angles = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
 		# self.pc.goto_joints(start_joint_angles)
 
-		# print("============ Press Enter to move away from center...")
-		# raw_input()
-		# start_pose = [0.30, -0.30, 0.30, 1.0, 0.0, 0.0, 0.0]
-		# self.pc.set_gripper(0.1)
-		# self.pc.goto_pose(start_pose, velocity=0.20)
+		print("============ Press Enter to move away from center...")
+		raw_input()
+		start_pose = [0.30, -0.30, 0.30, 1.0, 0.0, 0.0, 0.0]
+		self.pc.set_gripper(0.1)
+		self.pc.goto_pose(start_pose, velocity=0.25)
 
 		print("============ Press Enter to ask for grasp pose...")
 		raw_input()		
 		res = self.grasp_infer_srv()
-		target_pos = array([res.pos.x, res.pos.y, res.pos.z])
+		target_pos = array([res.pos.x, res.pos.y, res.pos.z+0.04]) # account for longer finger
 		target_yaw = res.yaw
 		print(target_pos, target_yaw)
 
 		print("============ Press Enter to move to above target...")
 		raw_input()
 		target_pos_above = target_pos + array([0.,0.,0.10])
-		target_quat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4+target_yaw,0,0]))
+		target_quat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4-target_yaw,0,0]))
 		target_above_pose =list(np.concatenate((target_pos_above, target_quat)))
 		# print(target_above_pose)
-		self.pc.goto_pose(target_above_pose, velocity=0.20)
+		self.pc.goto_pose(target_above_pose, velocity=0.25)
 
 		print("============ Press Enter to reach down...")
 		raw_input()
 		target_pose =list(np.concatenate((target_pos, target_quat)))
-		self.pc.goto_pose(target_pose, velocity=0.03)
+		self.pc.goto_pose(target_pose, velocity=0.05)
 
 		print("============ Press Enter to grasp...")
 		raw_input()
@@ -128,22 +128,28 @@ class GraspEnv(object):
 
 		print("============ Press Enter to lift...")
 		raw_input()
-		self.pc.goto_pose(target_above_pose, velocity=0.03)
+		self.pc.goto_pose(target_above_pose, velocity=0.05)
 
 		print("============ Press Enter to put down...")
 		raw_input()
-		self.pc.goto_pose(target_pose, velocity=0.03)		
+		self.pc.goto_pose(target_pose, velocity=0.05)		
 		self.pc.set_gripper(0.1)
 
 		print("============ Press Enter to lift...")
 		raw_input()
-		self.pc.goto_pose(target_above_pose, velocity=0.03)
+		self.pc.goto_pose(target_above_pose, velocity=0.05)
 
-		print("============ Press Enter to home...")
+		print("============ Press Enter to move to initial pose...")
 		raw_input()
-		start_joint_angles = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
-		self.pc.goto_joints(start_joint_angles)
+		start_pose = [0.30, -0.30, 0.30, 1.0, 0.0, 0.0, 0.0]
 		self.pc.set_gripper(0.1)
+		self.pc.goto_pose(start_pose, velocity=0.25)
+
+		# print("============ Press Enter to home...")
+		# raw_input()
+		# start_joint_angles = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
+		# self.pc.goto_joints(start_joint_angles)
+		# self.pc.set_gripper(0.1)
 
 		# if not grasp_ret or self.ROBOT_ERROR_DETECTED:
 		# 	rospy.logerr('Something went wrong, aborting this run')
