@@ -38,6 +38,9 @@ class CameraEnv(object):
 		self.depth_normalized = None
 		self.depth_processed = None
 
+		# Offset for 6 deg
+		self.all_offset = np.load('/home/allen/catkin_ws/src/franka_irom/grasp_depth_offset.npz')['all_offset']
+
 		# Set up policy and load posterior
 		self.actor = PolicyNetGrasp(input_num_chann=1,
 				dim_mlp_append=0,
@@ -73,9 +76,14 @@ class CameraEnv(object):
 		self.depth_cropped = self.depth_raw \
 				[288-processed_height_radius:288+processed_height_radius, \
 				320-processed_width_radius:320+processed_width_radius]
-		for height_ind in range(processed_height_radius*2):  # account for weird differences in height on table, assume 1st pixel is table (not covered)
-			depth_ini = self.depth_cropped[height_ind,0]
-			self.depth_cropped[height_ind] += (table_offset-depth_ini)
+		self.depth_cropped += (table_offset-self.all_offset.reshape(-1,1))
+
+		# all_offset = np.zeros((processed_height_radius*2))
+		# for height_ind in range(processed_height_radius*2):  # account for weird differences in height on table, assume 1st pixel is table (not covered)
+		# 	all_offset[height_ind] = np.mean(self.depth_cropped[height_ind,0:5])
+		# 	depth_ini = self.depth_cropped[height_ind,0]
+		# 	self.depth_cropped[height_ind] += (table_offset-depth_ini)
+		# np.savez('/home/allen/catkin_ws/src/franka_irom/grasp_depth_offset.npz', all_offset=all_offset)
 		self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
 
 		# Bin depth image to desired dim for inference

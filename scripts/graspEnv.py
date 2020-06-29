@@ -87,20 +87,20 @@ class GraspEnv(object):
 		# print(startQuat)
 
 		# Add table as collision
-		print("============ Press Enter to add table...")
-		raw_input()
-		self.pc.add_table()
+		# print("============ Press Enter to add table...")
+		# raw_input()
+		# self.pc.add_table()
 
-		print("============ Press Enter to move to initial pose...")
-		raw_input()
-		start_joint_angles = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
-		self.pc.goto_joints(start_joint_angles)
+		# print("============ Press Enter to move to initial pose...")
+		# raw_input()
+		# start_joint_angles = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
+		# self.pc.goto_joints(start_joint_angles)
 
-		print("============ Press Enter to move away from center...")
-		raw_input()
-		start_pose = [0.30, -0.30, 0.30, 1.0, 0.0, 0.0, 0.0]
-		self.pc.set_gripper(0.1)
-		self.pc.goto_pose(start_pose, velocity=0.20)
+		# print("============ Press Enter to move away from center...")
+		# raw_input()
+		# start_pose = [0.30, -0.30, 0.30, 1.0, 0.0, 0.0, 0.0]
+		# self.pc.set_gripper(0.1)
+		# self.pc.goto_pose(start_pose, velocity=0.20)
 
 		print("============ Press Enter to ask for grasp pose...")
 		raw_input()		
