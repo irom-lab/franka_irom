@@ -141,16 +141,15 @@ class PushEnv(object):
 		
 		print("============ Press Enter to move to initial pose...")
 		raw_input()
-		startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
-		print(startQuat)
+		# startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
+		# print(startQuat)
 
 		# straight down, z=0.155 hits table
 
-		# start_pose = [0.40, 0.0, 0.30, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
-		start_pose = [0.30, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
+		start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
+		# start_pose = [0.30, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
 		self.pc.goto_pose(start_pose, velocity=0.1)
-		# self.pc.set_gripper(0.04)
-		self.pc.set_gripper(0.0)
+		self.pc.set_gripper(0.015)
 		rospy.sleep(3.0)
 
 		print("============ Press Enter to switch to velocity control...")
