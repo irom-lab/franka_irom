@@ -18,7 +18,6 @@ from nn_policy import PolicyNetGrasp
 
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Image
-from franka_irom.srv import GraspInfer, GraspInferResponse
 
 
 class CameraEnv(object):
@@ -26,15 +25,19 @@ class CameraEnv(object):
 		super(CameraEnv, self).__init__()
 
 		# Subscribe to depth topic
-		rospy.Subscriber('/depth/image_rect', Image, self.depth_callback, queue_size=1)
+		# rospy.Subscriber('/depth/image_raw', Image, self.raw_depth_callback, queue_size=1)
+		rospy.Subscriber('/depth/image_rect', Image, self.rect_depth_callback, queue_size=1)
 
-		# Service to graspEnv
-		rospy.Service('~infer_grasp', GraspInfer, self.capture_depth)
-
-		# Raw depth image from camera
+		# Raw and rectified depth image from camera
+		# self.depth_raw = None
 		self.depth_rect = None
+
+		# Processed depth image ready for inference
 		self.depth_normalized = None
 		self.depth_binned = None
+
+		# Offset for 6 deg
+		# self.all_offset = np.load('/home/allen/catkin_ws/src/franka_irom/grasp_depth_offset.npz')['all_offset']
 
 		# Set up policy and load posterior
 		self.actor = PolicyNetGrasp(input_num_chann=1,
@@ -53,35 +56,40 @@ class CameraEnv(object):
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
 
 
-	def depth_callback(self, msg):
+	# def raw_depth_callback(self, msg):
+	# 	self.depth_raw = ros_numpy.numpify(msg)  # 576x640, fov 65x75
+	def rect_depth_callback(self, msg):
 		self.depth_rect = ros_numpy.numpify(msg)  # 576x640, fov 65x75
 
 
-	def capture_depth(self, req):
+	def capture_depth(self):
 
-		# print("============ Press Enter to record a sample depth image...")
-		# input()
+		print("============ Press Enter to record a sample depth image...")
+		input()
 		r = rospy.Rate(5)
 
 		table_offset = 0.755
 		normalizing_height = 0.20
-		processed_height_radius = 115
-		processed_width_radius = 128 # same ratio as 576x640
+		processed_height_radius = 115  # should be 99
+		processed_width_radius = 128 # should be 91
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \
 				320-processed_width_radius:320+processed_width_radius]
-		self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
-		self.depth_binned = np.rot90(bin_image(self.depth_normalized, 
-									  target_height=128, 
-									  target_width=128, 
-									  bin_average=False), k=1,  axes=(1,0))
+		# # self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
+		self.depth_normalized = np.rot90(table_offset-self.depth_cropped, k=1,  axes=(1,0))
+		# self.depth_binned = np.rot90(bin_image(self.depth_normalized, 
+									#   target_height=128, 
+									#   target_width=128, 
+									#   bin_average=False), k=1,  axes=(1,0))
 
-		# plt.imshow(self.depth_rect, cmap='Greys', interpolation='nearest')
+		# plt.imshow(self.depth_raw, cmap='Greys', interpolation='nearest')
 		# plt.show()
+		np.savez('/home/allen/catkin_ws/src/franka_irom/mug_depth.npz', depth=self.depth_normalized)
 		f, axarr = plt.subplots(1,2) 
-		axarr[0].imshow(self.depth_cropped, cmap='Greys', interpolation='nearest')
-		axarr[1].imshow(self.depth_binned, cmap='Greys', interpolation='nearest')
+		axarr[0].imshow(self.depth_rect, cmap='Greys', interpolation='nearest')
+		axarr[1].imshow(self.depth_normalized, cmap='Greys', interpolation='nearest')
+		# axarr[1].scatter(processed_width_radius, processed_height_radius, s=10)
 		plt.show()
 
 		# Inference
@@ -96,15 +104,11 @@ class CameraEnv(object):
 
 		# Extract target yaw
 		target_yawEnc = pred[3:5]
-		# target_yaw = wrap2pi(np.arctan2(target_yawEnc[0], target_yawEnc[1])-np.pi)
 		target_yaw = np.arctan2(target_yawEnc[0], target_yawEnc[1])
 		target_yaw = wrap2halfPi(target_yaw)
 
-		# Respond
-		res = GraspInferResponse()
-		res.pos = Vector3(x=target_pos[0], y=target_pos[1], z=target_pos[2])
-		res.yaw = target_yaw
-		return res
+		return 1
+
 
 def wrap2halfPi(angle):  # assume input in [-pi, pi]
 	if angle < -np.pi/2:
@@ -149,11 +153,4 @@ def bin_image(image_raw, target_height, target_width, bin_average=True):
 if __name__ == '__main__':
 	rospy.init_node('camera_env')
 	cameraEnv = CameraEnv()
-	rospy.spin()
-
-	# all_offset = np.zeros((processed_height_radius*2))
-	# for height_ind in range(processed_height_radius*2):  # account for weird differences in height on table, assume 1st pixel is table (not covered)
-	# 	all_offset[height_ind] = np.mean(self.depth_cropped[height_ind,0:5])
-	# 	depth_ini = self.depth_cropped[height_ind,0]
-	# 	self.depth_cropped[height_ind] += (table_offset-depth_ini)
-	# np.savez('/home/allen/catkin_ws/src/franka_irom/grasp_depth_offset.npz', all_offset=all_offset)
+	cameraEnv.capture_depth()
