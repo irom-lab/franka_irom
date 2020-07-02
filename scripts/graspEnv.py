@@ -150,6 +150,7 @@ class GraspEnv(object):
 			raw_input()
 			if self.ROBOT_ERROR_DETECTED:
 				self.__recover_robot_from_error()
+
 			self.pc.goto_pose(target_pose, velocity=0.05)
 			self.pc.set_gripper(0.1)
 
