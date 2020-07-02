@@ -25,7 +25,7 @@ class CameraEnv(object):
 		super(CameraEnv, self).__init__()
 
 		# Subscribe to depth topic
-		# rospy.Subscriber('/depth/image_raw', Image, self.raw_depth_callback, queue_size=1)
+		# rospy.Subscriber('/depth/image_raw', Image, self.rect_depth_callback, queue_size=1)
 		rospy.Subscriber('/depth/image_rect', Image, self.rect_depth_callback, queue_size=1)
 
 		# Raw and rectified depth image from camera
@@ -43,18 +43,23 @@ class CameraEnv(object):
 		self.actor = PolicyNetGrasp(input_num_chann=1,
 				dim_mlp_append=0,
 				num_mlp_output=5,
-				out_cnn_dim=64,
-				z_conv_dim=7,
-				z_mlp_dim=16,
+				out_cnn_dim=40,  # 64
+				z_conv_dim=2,    # 7
+				z_mlp_dim=8,     # 23
 				img_size=128).to('cpu')
+		# actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_12/550.pt'
+		actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_13/800.pt'
 		self.actor.load_state_dict(torch.load(
-			'/home/allen/PAC-Imitation/model/grasp_bc_12_550.pt', 	
+			actor_path, 	
 			map_location=torch.device('cpu')))
-		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
+		# training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
+		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_8/train_details'
 		training_details_dic = torch.load(training_details_dic_path)
-		_, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
+		# _, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
+		best_emp_data = training_details_dic['best_emp_data']  # best emp, for grasp_pac_8
+		self.mu_ps = best_emp_data[3]
+		logvar_ps = best_emp_data[4]
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
-
 
 	# def raw_depth_callback(self, msg):
 	# 	self.depth_raw = ros_numpy.numpify(msg)  # 576x640, fov 65x75
@@ -70,18 +75,20 @@ class CameraEnv(object):
 
 		table_offset = 0.755
 		normalizing_height = 0.20
-		processed_height_radius = 115  # should be 99
-		processed_width_radius = 128 # should be 91
+		# processed_height_radius = 115  # should be 99
+		# processed_width_radius = 128 # should be 91
+		processed_height_radius = 128
+		processed_width_radius = 128
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \
 				320-processed_width_radius:320+processed_width_radius]
-		# # self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
+		self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
 		self.depth_normalized = np.rot90(table_offset-self.depth_cropped, k=1,  axes=(1,0))
 		# self.depth_binned = np.rot90(bin_image(self.depth_normalized, 
-									#   target_height=128, 
-									#   target_width=128, 
-									#   bin_average=False), k=1,  axes=(1,0))
+		# 							  target_height=128, 
+		# 							  target_width=128, 
+		# 							  bin_average=False), k=1,  axes=(1,0))
 
 		# plt.imshow(self.depth_raw, cmap='Greys', interpolation='nearest')
 		# plt.show()
@@ -89,7 +96,7 @@ class CameraEnv(object):
 		f, axarr = plt.subplots(1,2) 
 		axarr[0].imshow(self.depth_rect, cmap='Greys', interpolation='nearest')
 		axarr[1].imshow(self.depth_normalized, cmap='Greys', interpolation='nearest')
-		# axarr[1].scatter(processed_width_radius, processed_height_radius, s=10)
+		axarr[1].scatter(processed_height_radius, processed_width_radius, s=10)
 		plt.show()
 
 		# Inference

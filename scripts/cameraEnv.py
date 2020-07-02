@@ -37,19 +37,32 @@ class CameraEnv(object):
 		self.depth_binned = None
 
 		# Set up policy and load posterior
+		# self.actor = PolicyNetGrasp(input_num_chann=1,
+				# dim_mlp_append=0,
+				# num_mlp_output=5,
+				# out_cnn_dim=64,
+				# z_conv_dim=7,  
+				# z_mlp_dim=16,
+				# img_size=128).to('cpu')
 		self.actor = PolicyNetGrasp(input_num_chann=1,
 				dim_mlp_append=0,
 				num_mlp_output=5,
-				out_cnn_dim=64,
-				z_conv_dim=7,
-				z_mlp_dim=16,
+				out_cnn_dim=40,  
+				z_conv_dim=2,    
+				z_mlp_dim=8,    
 				img_size=128).to('cpu')
+		# actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_12/550.pt'
+		actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_13/800.pt'
 		self.actor.load_state_dict(torch.load(
-			'/home/allen/PAC-Imitation/model/grasp_bc_12_550.pt', 	
+			actor_path, 	
 			map_location=torch.device('cpu')))
-		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
+		# training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
+		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_8/train_details'
 		training_details_dic = torch.load(training_details_dic_path)
-		_, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
+		# _, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
+		best_emp_data = training_details_dic['best_emp_data']  # best emp, for grasp_pac_8
+		self.mu_ps = best_emp_data[3]
+		logvar_ps = best_emp_data[4]
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
 
 
@@ -65,8 +78,8 @@ class CameraEnv(object):
 
 		table_offset = 0.755
 		normalizing_height = 0.20
-		processed_height_radius = 115
-		processed_width_radius = 128 # same ratio as 576x640
+		processed_height_radius = 135
+		processed_width_radius = 135
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \
@@ -76,10 +89,13 @@ class CameraEnv(object):
 									  target_height=128, 
 									  target_width=128, 
 									  bin_average=False), k=1,  axes=(1,0))
+		self.depth_binned[self.depth_binned > 0.99] = 0.005  # invalidated pixel
+		max_depth = np.max(self.depth_binned)
+		self.depth_binned[self.depth_binned > max_depth/4] = max_depth
 
 		# plt.imshow(self.depth_rect, cmap='Greys', interpolation='nearest')
 		# plt.show()
-		f, axarr = plt.subplots(1,2) 
+		f, axarr = plt.subplots(1,2)
 		axarr[0].imshow(self.depth_cropped, cmap='Greys', interpolation='nearest')
 		axarr[1].imshow(self.depth_binned, cmap='Greys', interpolation='nearest')
 		plt.show()
@@ -87,6 +103,7 @@ class CameraEnv(object):
 		# Inference
 		depth_nn = torch.from_numpy(self.depth_binned.copy()).float().unsqueeze(0).unsqueeze(0)
 		zs = torch.normal(mean=self.mu_ps, std=self.sigma_ps).reshape(1, -1)
+		print(zs)
 		pred = self.actor(depth_nn, zs).squeeze(0).detach().numpy()
 
 		# Extract target pos
