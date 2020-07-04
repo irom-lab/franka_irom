@@ -83,7 +83,8 @@ class GraspEnv(object):
 		# startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
 		# print(startQuat)
 
-		z_offset = 0.03
+		z_offset = 0.02
+		# z_offset = 0.03
 
 		# print("============ Press Enter to move to initial pose...")
 		# raw_input()

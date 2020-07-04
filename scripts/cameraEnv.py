@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import time
 import torch
 import copy
+import datetime
 
 import rospy
 import ros_numpy  # for converting Image to np array
@@ -56,13 +57,13 @@ class CameraEnv(object):
 		self.actor.load_state_dict(torch.load(
 			actor_path, 	
 			map_location=torch.device('cpu')))
-		# training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
-		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_8/train_details'
+		# training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_8/train_details'
+		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_12/train_details'
 		training_details_dic = torch.load(training_details_dic_path)
-		# _, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
-		best_emp_data = training_details_dic['best_emp_data']  # best emp, for grasp_pac_8
-		self.mu_ps = best_emp_data[3]
-		logvar_ps = best_emp_data[4]
+		# best_data = training_details_dic['best_emp_data']  # best emp, for grasp_pac_8
+		best_data = training_details_dic['best_bound_data']  # best emp, for grasp_pac_12
+		self.mu_ps = best_data[3]
+		logvar_ps = best_data[4]
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
 
 
@@ -76,10 +77,10 @@ class CameraEnv(object):
 		# input()
 		r = rospy.Rate(5)
 
-		table_offset = 0.755
+		table_offset = 0.760
 		normalizing_height = 0.20
-		processed_height_radius = 135
-		processed_width_radius = 135
+		processed_height_radius = 132  # 576*0.175/tan(45)/table_offset
+		processed_width_radius = 132
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \
@@ -121,6 +122,14 @@ class CameraEnv(object):
 		res = GraspInferResponse()
 		res.pos = Vector3(x=target_pos[0], y=target_pos[1], z=target_pos[2])
 		res.yaw = target_yaw
+
+		# Save pose
+		x = datetime.datetime.now()
+		np.savez('/home/allen/data/grasp_exp_0704/'+x.strftime("%X"), depth_rect=self.depth_rect, 
+			depth_binned=self.depth_binned,
+			target_pos=target_pos,
+			target_yaw=target_yaw)
+
 		return res
 
 def wrap2halfPi(angle):  # assume input in [-pi, pi]
@@ -164,6 +173,10 @@ def bin_image(image_raw, target_height, target_width, bin_average=True):
 
 
 if __name__ == '__main__':
+	seed = 0
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+
 	rospy.init_node('camera_env')
 	cameraEnv = CameraEnv()
 	rospy.spin()
