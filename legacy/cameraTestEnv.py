@@ -75,8 +75,10 @@ class CameraEnv(object):
 
 		table_offset = 0.755
 		normalizing_height = 0.20
-		processed_height_radius = 200  # 576*0.2625/0.755
-		processed_width_radius = 200
+		# processed_height_radius = 115  # should be 99
+		# processed_width_radius = 128 # should be 91
+		processed_height_radius = 128
+		processed_width_radius = 128
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \

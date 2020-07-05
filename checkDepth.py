@@ -3,7 +3,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
-depth = np.load('mug_depth.npz')['depth']
+depth = np.load('push_initial_depth.npz')['depth']
 print(depth)
-plt.imshow(depth, vmin=0.0, vmax=0.15)
+plt.imshow(depth, vmin=0.0, vmax=1.0)
 plt.show()

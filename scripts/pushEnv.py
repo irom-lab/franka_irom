@@ -102,27 +102,6 @@ class PushEnv(object):
 			return
 
 		# TODO: subscribe to inference node
-
-		# res = self.entropy_srv()
-		# if not res.success:
-		# 	# Something has gone wrong, 0 velocity.
-		# 	self.BAD_UPDATE = True
-		# 	self.curr_velo = Twist()
-		# 	return
-
-		# self.viewpoints = res.no_viewpoints
-
-		# # Calculate the required angular velocity to match the best grasp.
-		# q = tfh.quaternion_to_list(res.best_grasp.pose.orientation)
-		# curr_R = np.array(self.robot_state.O_T_EE).reshape((4, 4)).T
-		# cpq = tft.quaternion_from_matrix(curr_R)
-		# dq = tft.quaternion_multiply(q, tft.quaternion_conjugate(cpq))
-		# d_euler = tft.euler_from_quaternion(dq)
-		# res.velocity_cmd.angular.z = d_euler[2]
-
-		# self.best_grasp = res.best_grasp
-		# self.curr_velo = res.velocity_cmd
-
 		# tfh.publish_pose_as_transform(self.best_grasp.pose, 'panda_link0', 'G', 0.05)
 
 
@@ -146,11 +125,13 @@ class PushEnv(object):
 
 		# straight down, z=0.155 hits table
 
-		start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
-		# start_pose = [0.30, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
-		self.pc.goto_pose(start_pose, velocity=0.1)
+		# start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
+		start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
+		# start_pose = [0.60, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
+		self.pc.goto_joints(start_joint_angles)
+		# self.pc.goto_pose(start_pose, velocity=0.1)
 		self.pc.set_gripper(0.015)
-		rospy.sleep(3.0)
+		rospy.sleep(1.0)
 
 		print("============ Press Enter to switch to velocity control...")
 		raw_input()

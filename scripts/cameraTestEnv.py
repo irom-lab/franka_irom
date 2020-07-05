@@ -14,7 +14,7 @@ import copy
 
 import rospy
 import ros_numpy  # for converting Image to np array
-from nn_policy import PolicyNetGrasp
+from nn_policy import PolicyNet
 
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Image
@@ -36,33 +36,29 @@ class CameraEnv(object):
 		self.depth_normalized = None
 		self.depth_binned = None
 
-		# Offset for 6 deg
-		# self.all_offset = np.load('/home/allen/catkin_ws/src/franka_irom/grasp_depth_offset.npz')['all_offset']
-
 		# Set up policy and load posterior
-		self.actor = PolicyNetGrasp(input_num_chann=1,
-				dim_mlp_append=0,
-				num_mlp_output=5,
-				out_cnn_dim=40,  # 64
-				z_conv_dim=2,    # 7
-				z_mlp_dim=8,     # 23
-				img_size=128).to('cpu')
-		# actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_12/550.pt'
-		actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_13/800.pt'
+		self.actor = PolicyNet(input_num_chann=1,
+				dim_mlp_append=10,
+				num_mlp_output=2,
+				out_cnn_dim=40,
+				z_conv_dim=1,
+				z_mlp_dim=4,
+				img_size=150).to('cpu')
+		actor_path = '/home/allen/PAC-Imitation/model/push_bc_30/bc_actor_20.pt'
 		self.actor.load_state_dict(torch.load(
 			actor_path, 	
 			map_location=torch.device('cpu')))
-		# training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_6/train_details'
-		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_8/train_details'
+		training_details_dic_path = '/home/allen/PAC-Imitation/result/push_pac_26/train_details'
 		training_details_dic = torch.load(training_details_dic_path)
-		# _, _, self.mu_ps, logvar_ps, _, _, _ = training_details_dic['best_data']  # best bound
-		best_emp_data = training_details_dic['best_emp_data']  # best emp, for grasp_pac_8
+		best_emp_data = training_details_dic['best_emp_data']
 		self.mu_ps = best_emp_data[3]
 		logvar_ps = best_emp_data[4]
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
 
-	# def raw_depth_callback(self, msg):
-	# 	self.depth_raw = ros_numpy.numpify(msg)  # 576x640, fov 65x75
+		# 
+		self.ee_history = torch.zeros((10))
+
+
 	def rect_depth_callback(self, msg):
 		self.depth_rect = ros_numpy.numpify(msg)  # 576x640, fov 65x75
 
@@ -73,63 +69,51 @@ class CameraEnv(object):
 		input()
 		r = rospy.Rate(5)
 
-		table_offset = 0.755
-		normalizing_height = 0.20
-		# processed_height_radius = 115  # should be 99
-		# processed_width_radius = 128 # should be 91
-		processed_height_radius = 128
-		processed_width_radius = 128
+		table_offset = 0.76
+		normalizing_height = 0.12
+		processed_height_radius = 190  # 576*0.2625/0.755
+		processed_width_radius = 190
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \
 				320-processed_width_radius:320+processed_width_radius]
 		self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
-		self.depth_normalized = np.rot90(table_offset-self.depth_cropped, k=1,  axes=(1,0))
-		# self.depth_binned = np.rot90(bin_image(self.depth_normalized, 
-		# 							  target_height=128, 
-		# 							  target_width=128, 
-		# 							  bin_average=False), k=1,  axes=(1,0))
+		# self.depth_normalized = np.rot90(table_offset-self.depth_cropped, k=1,  axes=(1,0))
+		self.depth_binned = np.rot90(bin_image(self.depth_normalized, 
+									  target_height=150, 
+									  target_width=150, 
+									  bin_average=False), k=1,  axes=(1,0))
+		self.depth_binned[self.depth_binned >= 0.99] = 0.0
 
-		# plt.imshow(self.depth_raw, cmap='Greys', interpolation='nearest')
-		# plt.show()
-		np.savez('/home/allen/catkin_ws/src/franka_irom/mug_depth.npz', depth=self.depth_normalized)
+		# Visualize
 		f, axarr = plt.subplots(1,2) 
 		axarr[0].imshow(self.depth_rect, cmap='Greys', interpolation='nearest')
-		axarr[1].imshow(self.depth_normalized, cmap='Greys', interpolation='nearest')
-		axarr[1].scatter(processed_height_radius, processed_width_radius, s=10)
+		axarr[1].imshow(self.depth_binned, cmap='Greys', interpolation='nearest')
+		# axarr[1].scatter(processed_height_radius, processed_width_radius, s=10)
 		plt.show()
+
+		# Scaling in xy
+		action_scale = array([50, 50])
+		eePose_scale = array([3, 6])
+		eePos, eeOrn = self.pandaEnv.get_ee()
+		eePos -= array([0.35,0.0,0.18])
+		eePos[:2] *= eePose_scale
+		self.ee_history[2:10] = self.ee_history[0:8]
+		self.ee_history[0:2] = self.eePos[:2]
 
 		# Inference
 		depth_nn = torch.from_numpy(self.depth_binned.copy()).float().unsqueeze(0).unsqueeze(0)
+		# TODO: use single z, as req
 		zs = torch.normal(mean=self.mu_ps, std=self.sigma_ps).reshape(1, -1)
-		pred = self.actor(depth_nn, zs).squeeze(0).detach().numpy()
+		action_pred = self.actor(depth_nn, zs).squeeze(0).detach().numpy()
 
-		# Extract target pos
-		target_pos = pred[:3]
-		target_pos[:2] /= 20
-		target_pos[0] += 0.5  # add offset
-
-		# Extract target yaw
-		target_yawEnc = pred[3:5]
-		target_yaw = np.arctan2(target_yawEnc[0], target_yawEnc[1])
-		target_yaw = wrap2halfPi(target_yaw)
+		# Extract
+		action_pred /= action_scale[:2]
+		posAction = np.hstack((action_pred[:2], 0))
+		eulerAction = [0,0,0]
 
 		return 1
 
-
-def wrap2halfPi(angle):  # assume input in [-pi, pi]
-	if angle < -np.pi/2:
-		return angle + np.pi 
-	elif angle > np.pi/2:
-		return angle - np.pi
-	return angle
-
-def wrap2pi(angle):
-	if angle < -np.pi:
-		return angle + 2*np.pi 
-	elif angle > np.pi:
-		return angle - 2*np.pi
-	return angle
 
 def bin_image(image_raw, target_height, target_width, bin_average=True):
 	"""
