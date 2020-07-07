@@ -36,13 +36,18 @@ class PushEnv(object):
 		# Set up panda moveit commander, pose control
 		self.pc = PandaCommander(group_name='panda_arm')
 
+		# Initialize
+		rospy.Subscriber('/push_infer', Vector3, self.__push_infer_callback, queue_size=1)
+		self.delta_x = 0.0
+		self.delta_y = 0.0
+		self.delta_x_buffer = 0.0
+		self.delta_y_buffer = 0.0
+
 		# Set up ropy and joint velocity controller
 		self.panda = rp.Panda()
-		self.max_velo = 1.0  # not using rn
 		self.curr_velocity_publish_rate = 100.0  # for libfranka
 		self.curr_velo_pub = rospy.Publisher('/joint_velocity_node_controller/joint_velocity', Float64MultiArray, queue_size=1)
 		self.curr_velo = Float64MultiArray()
-		self._in_velo_loop = False
 
 		# Set up switch between moveit and velocity, start with moveit
 		self.cs = ControlSwitcher({
@@ -51,7 +56,7 @@ class PushEnv(object):
 		self.cs.switch_controller('moveit')
 
 		# Set up update with inference
-		self.update_rate = 100.0  # for inference
+		self.update_rate = 5.0  # for inference
 		update_topic_name = '~/update'
 		self.update_pub = rospy.Publisher(update_topic_name, Empty, queue_size=1)
 		rospy.Subscriber(update_topic_name, Empty, self.__update_callback, queue_size=1)
@@ -66,12 +71,6 @@ class PushEnv(object):
 		# Errors
 		self.ROBOT_ERROR_DETECTED = False
 		self.BAD_UPDATE = False
-
-		# # TF listener and broadcaster
-		# self.listener = tf.TransformListener()
-		# self.br = tf.TransformBroadcaster()
-
-		# self.__recover_robot_from_error()
 
 
 	def __recover_robot_from_error(self):
@@ -95,14 +94,15 @@ class PushEnv(object):
 				self.ROBOT_ERROR_DETECTED = True
 
 
-	def __update_callback(self, msg):
-		# Update the MVP Controller asynchronously
-		if not self._in_velo_loop:
-			# Stop the callback lagging behind
-			return
+	def __push_infer_callback(self, msg):
+		self.delta_x_buffer = msg.x
+		self.delta_y_buffer = msg.y
 
-		# TODO: subscribe to inference node
-		# tfh.publish_pose_as_transform(self.best_grasp.pose, 'panda_link0', 'G', 0.05)
+
+	def __update_callback(self, msg):
+		self.delta_x = self.delta_x_buffer
+		self.delta_y = self.delta_y_buffer
+		print(self.delta_x, self.delta_y)
 
 
 	def __trigger_update(self):
@@ -117,176 +117,90 @@ class PushEnv(object):
 
 
 	def go(self):
-		
-		print("============ Press Enter to move to initial pose...")
-		raw_input()
 		# startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
 		# print(startQuat)
 
-		# straight down, z=0.155 hits table
+		print("============ Press Enter to move to initial pose...")
+		raw_input()
 
+		# straight down, z=0.155 hits table
 		# start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
-		start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
 		# start_pose = [0.60, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
-		self.pc.goto_joints(start_joint_angles)
 		# self.pc.goto_pose(start_pose, velocity=0.1)
-		self.pc.set_gripper(0.015)
+		start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
+		self.pc.goto_joints(start_joint_angles)
+		self.pc.set_gripper(0.025)
 		rospy.sleep(1.0)
 
-		print("============ Press Enter to switch to velocity control...")
-		raw_input()
-		self.cs.switch_controller('velocity')
-		ctr = 0
-		r = rospy.Rate(self.curr_velocity_publish_rate)
-		self._in_velo_loop = True
+		# loop actions
+		while not rospy.is_shutdown():
 
-		# # Get current joint angle, tested
-		# self.panda.q = np.array(self.robot_state.q)
+			print("============ Press Enter to switch to velocity control...")
+			raw_input()
 
-		# Get current ee pose
-		wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')  # column major
+			self.cs.switch_controller('velocity')
+			r = rospy.Rate(self.curr_velocity_publish_rate)
+			arrived = False
+			ctr = 0
+			while 1:
 
-		# Set desired pose
-		wTep = np.copy(wTe)
-		wTep[0,3] += 0.10  # move 5cm in x
+				# Get current joint angles
+				self.panda.q = np.array(self.robot_state.q)
 
-		arrived = False
-		while not arrived:
-			# if self.ROBOT_ERROR_DETECTED or self.BAD_UPDATE:
-			# 	return False
+				# Update current ee pose
+				wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')
 
-			# Get current joint angles
-			self.panda.q = np.array(self.robot_state.q)
+				# Update desired pose
+				wTep = np.copy(wTe)
+				wTep[0,3] += self.delta_x
+				wTep[1,3] += self.delta_y
 
-			# Update current ee pose
-			wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')  # column major
+				# Desired end-effecor spatial velocity
+				v, arrived = rp.p_servo(wTe, wTep, gain=1.5, threshold=0.1)
 
-			# Desired end-effecor spatial velocity, threshold 0.01 - 0.493 final as 0.50 target
-			v, arrived = rp.p_servo(wTe, wTep, gain=0.5, threshold=0.01)
-			
-			# Solve for the joint velocities dq
-			dq = np.matmul(np.linalg.pinv(self.panda.Je), v)
+				# Solve for the joint velocities dq
+				dq = np.matmul(np.linalg.pinv(self.panda.Je), v)
 
-			# Stopping criteria: check ee_x pos
-			if self.robot_state.O_T_EE[-4] > 0.7:
+				# Stopping criteria: check ee pos, offset bt tip and ee is 7.7cm
+				if self.robot_state.O_T_EE[-4] > 0.68 or abs(self.robot_state.O_T_EE[-3]) > 0.2:
+					break
+
+				# Trigger update
+				ctr += 1
+				if ctr >= self.curr_velocity_publish_rate/self.update_rate:
+					ctr = 0
+					self.__trigger_update()
+
+				# # Check cartesian contact
+				# if any(self.robot_state.cartesian_contact):
+				# 	self.stop()
+				# 	rospy.logerr('Detected cartesian contact during velocity control loop.')
+				# 	break
+
+				# Send joint velocity cmd
+				v = Float64MultiArray()
+				v.data = dq
+				self.curr_velo_pub.publish(v)
+
+				r.sleep()
+
+			# Send zero velocities for a few seconds
+			ctr = 0
+			while ctr < 100:
 				self.stop()
-				rospy.sleep(0.1)
-				break
+				ctr += 1		
+				r.sleep()
 
-			# Trigger update
-			ctr += 1
-			if ctr >= self.curr_velocity_publish_rate/self.update_rate:
-				ctr = 0
-				self.__trigger_update()
-
-			# Check cartesian contact
-			if any(self.robot_state.cartesian_contact):
-				self.stop()
-				rospy.logerr('Detected cartesian contact during velocity control loop.')
-				break
-
-			# Send joint velocity cmd
-			v = Float64MultiArray()
-			v.data = dq
-			self.curr_velo_pub.publish(v)
-			r.sleep()
-		
-		# Send zero joint velocity
-		self.stop()
-		self.cs.switch_controller('moveit')  # need to switch right away, otherwise communication reflex error?
-		rospy.sleep(0.1)
-
-		print("============ Press Enter to home...")
-		raw_input()
-		start_pose = [0.30, 0.0, 0.40, -0.9239554, 0.3824994, 0.0003046, 0.0007358]
-		self.pc.goto_pose(start_pose, velocity=0.2)
-		self.pc.set_gripper(0.1)
-		self.pc.stop()
-
-		# if not grasp_ret or self.ROBOT_ERROR_DETECTED:
-		# 	rospy.logerr('Something went wrong, aborting this run')
-		# 	if self.ROBOT_ERROR_DETECTED:
-		# 		self.__recover_robot_from_error()
-		# 	continue
-
-
-	# def traj_time_scaling(self, startPos, endPos, numSteps):
-	# 	trajPos = np.zeros((numSteps, 3))
-	# 	for step in range(numSteps):
-	# 		s = 3 * (1.0 * step / numSteps) ** 2 - 2 * (1.0 * step / numSteps) ** 3
-	# 		trajPos[step] = (endPos-startPos)*s+startPos
-	# 	return trajPos
-
-
-	# def traj_tracking_vel(self, targetPos, targetQuat, posGain=20, velGain=5):
-	# 	eePos, eeQuat = self._panda.get_ee()
-
-	# 	eePosError = targetPos - eePos
-	# 	# eeOrnError = log_rot(quat2rot(targetQuat)@(quat2rot(eeQuat).T))  # in spatial frame
-	# 	eeOrnError = log_rot(quat2rot(targetQuat).dot((quat2rot(eeQuat).T)))  # in spatial frame
-
-	# 	jointPoses = self._panda.get_arm_joints() + [0,0,0]  # add fingers
-	# 	eeState = p.getLinkState(self._pandaId,
-	# 						self._panda.pandaEndEffectorLinkIndex,
-	# 						computeLinkVelocity=1,
-	# 						computeForwardKinematics=1)
-	# 	# Get the Jacobians for the CoM of the end-effector link. Note that in this example com_rot = identity, and we would need to use com_rot.T * com_trn. The localPosition is always defined in terms of the link frame coordinates.
-	# 	zero_vec = [0.0] * len(jointPoses)
-	# 	jac_t, jac_r = p.calculateJacobian(self._pandaId, 
-	# 								 	self._panda.pandaEndEffectorLinkIndex, 
-	# 								  	eeState[2], 
-	# 								   	jointPoses, 
-	# 									zero_vec, 
-	# 									zero_vec)  # use localInertialFrameOrientation
-	# 	jac_sp = full_jacob_pb(jac_t, jac_r)[:, :7]  # 6x10 -> 6x7, ignore last three columns
-		
-	# 	try:
-	# 		# jointDot = np.linalg.pinv(jac_sp)@(np.hstack((posGain*eePosError, velGain*eeOrnError)).reshape(6,1))  # pseudo-inverse
-	# 		jointDot = np.linalg.pinv(jac_sp).dot((np.hstack((posGain*eePosError, velGain*eeOrnError)).reshape(6,1)))  # pseudo-inverse
-	# 	except np.linalg.LinAlgError:
-	# 		jointDot = np.zeros((7,1))
-
-	# 	return jointDot
-
+			# Back
+			print("============ Press Enter to home...")
+			raw_input()
+			start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
+			self.cs.switch_controller('moveit')
+			self.pc.goto_joints(start_joint_angles)
+			self.pc.set_gripper(0.025)
 
 
 if __name__ == '__main__':
+
 	pushEnv = PushEnv()
 	pushEnv.go()
-
-	# def move_to_goal(self, pose_goal, horizon):
-	# 	"""
-	# 	Use resolved rate control
-	# 	"""
-	# 	# r = rospy.Rate(self.curr_velocity_publish_rate)
-	# 	while not rospy.is_shutdown():
-	# 		print(self.robot_state.O_T_EE)
-	# 		time.sleep(0.1)
-		
-	# 	# Current joint angle, TODO
-	# 	panda.q = np.array([0, -3, 0, -2.3, 0, 2, 0])
-
-	# 	# Current pose, 4x4, TODO
-	# 	wTe = panda.T
-
-	# 	# Desired pose, apply ee offset?
-	# 	wTep = np.copy(wTe)
-	# 	wTep[0,3] += 0.2
-
-	# 	while 1:
-	# 		continue
-	# 		# Desired end-effecor spatial velocity
-	# 		v, arrived = rp.p_servo(wTe, wTep)
-			
-	# 		# Solve for the joint velocities dq
-	# 		dq = np.matmul(np.linalg.pinv(panda.Je), v)
-	
-	# 		# Send command, TODO
-
-
-	# 		# # Check
-	# 		# current_pose = self.move_group.get_current_pose().pose
-	# 		# return all_close(pose_goal, current_pose, 0.01)
-
-
-

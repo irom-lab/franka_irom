@@ -69,10 +69,10 @@ class CameraEnv(object):
 		input()
 		r = rospy.Rate(5)
 
-		table_offset = 0.76
+		table_offset = 0.756
 		normalizing_height = 0.12
-		processed_height_radius = 190  # 576*0.2625/0.755
-		processed_width_radius = 190
+		processed_height_radius = 192  # 576*0.2625/0.755
+		processed_width_radius = 192
 
 		self.depth_cropped = self.depth_rect \
 				[288-processed_height_radius:288+processed_height_radius, \
