@@ -72,13 +72,11 @@ class PushEnv(object):
 		self.ROBOT_ERROR_DETECTED = False
 		self.BAD_UPDATE = False
 
-
 	def __recover_robot_from_error(self):
 		rospy.logerr('Recovering')
 		self.pc.recover()
 		rospy.logerr('Done')
 		self.ROBOT_ERROR_DETECTED = False
-
 
 	def __robot_state_callback(self, msg):
 		self.robot_state = msg
@@ -93,28 +91,26 @@ class PushEnv(object):
 					rospy.logerr('Robot Error Detected')
 				self.ROBOT_ERROR_DETECTED = True
 
-
 	def __push_infer_callback(self, msg):
 		self.delta_x_buffer = msg.x
 		self.delta_y_buffer = msg.y
 
-
-	def __update_callback(self, msg):
-		self.delta_x = self.delta_x_buffer
-		self.delta_y = self.delta_y_buffer
-		print(self.delta_x, self.delta_y)
-
-
 	def __trigger_update(self):
 		# Let ROS handle the threading for me.
 		self.update_pub.publish(Empty())
+	def __update_callback(self, msg):
+		self.delta_x = self.delta_x_buffer
+		self.delta_y = self.delta_y_buffer
 
+		self.wTep = array(self.robot_state.O_T_EE).reshape(4,4,order='F')
+		self.wTep[0,3] += self.delta_x
+		self.wTep[1,3] += self.delta_y
+		print(self.delta_x, self.delta_y)
 
 	def stop(self):
 		self.curr_velo = Float64MultiArray()
 		self.curr_velo.data = [0., 0., 0., 0., 0., 0., 0.]
 		self.curr_velo_pub.publish(self.curr_velo)
-
 
 	def go(self):
 		# startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
@@ -126,10 +122,12 @@ class PushEnv(object):
 		# straight down, z=0.155 hits table
 		# start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
 		# start_pose = [0.60, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
+		# start_pose = [0.75, 0.15, 0.16, 0.92387953, -0.38268343, 0., 0.]  # straight down
 		# self.pc.goto_pose(start_pose, velocity=0.1)
+		# self.pc.set_gripper(0.0)
 		start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
 		self.pc.goto_joints(start_joint_angles)
-		self.pc.set_gripper(0.025)
+		self.pc.set_gripper(0.03)
 		rospy.sleep(1.0)
 
 		# loop actions
@@ -138,10 +136,15 @@ class PushEnv(object):
 			print("============ Press Enter to switch to velocity control...")
 			raw_input()
 
+			# Initialize target pose
+			self.wTep = array(self.robot_state.O_T_EE).reshape(4,4,order='F')
+
+			# START
 			self.cs.switch_controller('velocity')
 			r = rospy.Rate(self.curr_velocity_publish_rate)
 			arrived = False
 			ctr = 0
+			start_time = 0
 			while 1:
 
 				# Get current joint angles
@@ -150,27 +153,23 @@ class PushEnv(object):
 				# Update current ee pose
 				wTe = array(self.robot_state.O_T_EE).reshape(4,4,order='F')
 
-				# Update desired pose
-				wTep = np.copy(wTe)
-				wTep[0,3] += self.delta_x
-				wTep[1,3] += self.delta_y
-
 				# Desired end-effecor spatial velocity
-				v, arrived = rp.p_servo(wTe, wTep, gain=1.5, threshold=0.1)
+				v, arrived = rp.p_servo(wTe, self.wTep, gain=2.0, threshold=0.1)
 
 				# Solve for the joint velocities dq
 				dq = np.matmul(np.linalg.pinv(self.panda.Je), v)
 
 				# Stopping criteria: check ee pos, offset bt tip and ee is 7.7cm
-				if self.robot_state.O_T_EE[-4] > 0.68 or abs(self.robot_state.O_T_EE[-3]) > 0.2:
+				if self.robot_state.O_T_EE[-4] > 0.67 or abs(self.robot_state.O_T_EE[-3]) > 0.25:
 					break
 
-				# Trigger update
+				# Update wTep in 5Hz
 				ctr += 1
 				if ctr >= self.curr_velocity_publish_rate/self.update_rate:
 					ctr = 0
 					self.__trigger_update()
-
+					print(time.time()-start_time)
+					start_time = time.time()
 				# # Check cartesian contact
 				# if any(self.robot_state.cartesian_contact):
 				# 	self.stop()
@@ -197,7 +196,7 @@ class PushEnv(object):
 			start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
 			self.cs.switch_controller('moveit')
 			self.pc.goto_joints(start_joint_angles)
-			self.pc.set_gripper(0.025)
+			self.pc.set_gripper(0.03)
 
 
 if __name__ == '__main__':
