@@ -72,11 +72,6 @@ class PushEnv(object):
 		self.ROBOT_ERROR_DETECTED = False
 		self.BAD_UPDATE = False
 
-	def __recover_robot_from_error(self):
-		rospy.logerr('Recovering')
-		self.pc.recover()
-		rospy.logerr('Done')
-		self.ROBOT_ERROR_DETECTED = False
 
 	def __robot_state_callback(self, msg):
 		self.robot_state = msg
@@ -102,6 +97,8 @@ class PushEnv(object):
 		self.delta_x = self.delta_x_buffer
 		self.delta_y = self.delta_y_buffer
 
+		# print(self.wTep[0:2,3], self.robot_state.O_T_EE[-4:-2])
+
 		self.wTep = array(self.robot_state.O_T_EE).reshape(4,4,order='F')
 		self.wTep[0,3] += self.delta_x
 		self.wTep[1,3] += self.delta_y
@@ -122,12 +119,12 @@ class PushEnv(object):
 		# straight down, z=0.155 hits table
 		# start_pose = [0.35, 0.0, 0.18, 0.89254919, -0.36948312,  0.23914479, -0.09822433]  # for pushing
 		# start_pose = [0.60, 0.0, 0.155, 0.92387953, -0.38268343, 0., 0.]  # straight down
-		# start_pose = [0.75, 0.15, 0.16, 0.92387953, -0.38268343, 0., 0.]  # straight down
+		# start_pose = [0.3375, 0.2625, 0.16, 0.92387953, -0.38268343, 0., 0.]  # straight down
 		# self.pc.goto_pose(start_pose, velocity=0.1)
 		# self.pc.set_gripper(0.0)
 		start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
 		self.pc.goto_joints(start_joint_angles)
-		self.pc.set_gripper(0.03)
+		self.pc.set_gripper(0.025)
 		rospy.sleep(1.0)
 
 		# loop actions
@@ -168,8 +165,9 @@ class PushEnv(object):
 				if ctr >= self.curr_velocity_publish_rate/self.update_rate:
 					ctr = 0
 					self.__trigger_update()
-					print(time.time()-start_time)
-					start_time = time.time()
+					# print(time.time()-start_time)
+					# start_time = time.time()
+
 				# # Check cartesian contact
 				# if any(self.robot_state.cartesian_contact):
 				# 	self.stop()
@@ -196,7 +194,7 @@ class PushEnv(object):
 			start_joint_angles = [-0.011, 0.261, 0.014, -2.941, 0.010, 3.725, 0.776]
 			self.cs.switch_controller('moveit')
 			self.pc.goto_joints(start_joint_angles)
-			self.pc.set_gripper(0.03)
+			self.pc.set_gripper(0.025)
 
 
 if __name__ == '__main__':

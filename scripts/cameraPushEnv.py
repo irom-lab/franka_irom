@@ -32,7 +32,7 @@ class CameraEnv(object):
 		rospy.Subscriber('/depth/image_rect', Image, self.__depth_callback, queue_size=1)
 
 		# Service to graspEnv
-		self.action_pub = rospy.Publisher('push_infer', Vector3, queue_size=2)
+		self.action_pub = rospy.Publisher('push_infer', Vector3, queue_size=1)
 
 		# Raw depth image from camera
 		self.depth_rect = None
@@ -51,7 +51,7 @@ class CameraEnv(object):
 		self.actor.load_state_dict(torch.load(
 			actor_path, 	
 			map_location=torch.device('cpu')))
-		training_details_dic_path = '/home/allen/PAC-Imitation/result/push_pac_26/train_details'
+		training_details_dic_path = '/home/allen/PAC-Imitation/result/push_pac_29/train_details'
 		training_details_dic = torch.load(training_details_dic_path)
 		best_emp_data = training_details_dic['best_emp_data']
 		self.mu_ps = best_emp_data[3]
@@ -59,9 +59,10 @@ class CameraEnv(object):
 		self.sigma_ps = torch.exp(0.5*logvar_ps)
 
 		# Sample epsilon
+		# self.z = (self.mu_ps + eps*self.sigma_ps).reshape(1,-1)
+		# self.z = torch.tensor([[1.5369,  0.1802, -1.2965,  0.3075,  2.2922]])
 		eps = torch.randn_like(self.sigma_ps)
-		self.z = (self.mu_ps + eps*self.sigma_ps).reshape(1,-1)
-		# self.z = torch.randn_like(self.sigma_ps).reshape(1,-1)
+		self.zs = (self.mu_ps + eps*self.sigma_ps).reshape(1,-1)
 
 		# Subscribe to robot state for ee pos
 		self.robot_state = None
@@ -78,8 +79,8 @@ class CameraEnv(object):
 
 	def __robot_state_callback(self, msg):
 		self.robot_state = msg
-		self.eeX = 3*(self.robot_state.O_T_EE[-4]-0.35)
-		self.eeY = 6*self.robot_state.O_T_EE[-3]
+		self.eeX = 3*(self.robot_state.O_T_EE[-4]-0.35020)
+		self.eeY = 6*(self.robot_state.O_T_EE[-3]-0.00012)
 
 	def __depth_callback(self, msg):
 		self.depth_rect = ros_numpy.numpify(msg)  # 576x640, fov 65x75
@@ -91,10 +92,11 @@ class CameraEnv(object):
 		self.ee_history[2:10] = self.ee_history[0:8]
 		self.ee_history[0] = self.eeX
 		self.ee_history[1] = self.eeY
+		# print(self.ee_history)
 
 	def infer(self):
 
-		table_offset = 0.667
+		table_offset = 0.644 # was 0.667
 		normalizing_height = 0.12
 		processed_height_radius = 225
 		processed_width_radius = 225
@@ -104,7 +106,6 @@ class CameraEnv(object):
 		start_time = time.time()
 		while not rospy.is_shutdown():
 			if self.depth_rect is not None:
-				# print(self.ee_history)
 				self.depth_cropped = self.depth_rect \
 						[288-processed_height_radius: \
 						288+processed_height_radius, \
@@ -113,31 +114,38 @@ class CameraEnv(object):
 				self.depth_normalized = ((table_offset-self.depth_cropped)/normalizing_height).clip(min=0.0, max=1.0)
 				self.depth_binned = block_reduce(self.depth_normalized, 
 												block_size=(3,3),
-												func=np.mean, 
+												func=np.max, 
 												cval=0.0)
 				self.depth_binned = np.rot90(self.depth_binned, 
 											k=1, axes=(1,0))
-				self.depth_binned = np.hstack((np.zeros((150,5)), 
-											   self.depth_binned[:,:145]))
-				self.depth_binned[self.depth_binned >= 0.90] = 0.0
+				# self.depth_binned = np.hstack((np.zeros((150,5)), 
+				# 							   self.depth_binned[:,:145]))
+				self.depth_binned *= 1.1
+				self.depth_binned[self.depth_binned >= 0.99] = 0.0
+				# self.depth_binned[:,92:] = 0.0
 
 				# f, axarr = plt.subplots(1,2)
 				# axarr[0].imshow(self.depth_cropped, cmap='Greys', interpolation='nearest')
 				# axarr[1].imshow(self.depth_binned, cmap='Greys', interpolation='nearest')
 				# axarr[1].scatter(x=75,y=75,s=10)
 				# plt.show()
+				# plt.imshow(self.depth_binned, cmap='Greys', interpolation='nearest')
+				# plt.show()
 
 				# Update wTep in 5Hz
 				self.__trigger_update()
 
 				# Inference
+				eps = torch.randn_like(self.sigma_ps)
+				self.zs = (self.mu_ps + eps*self.sigma_ps).reshape(1,-1)
+
 				depth_nn = torch.from_numpy(self.depth_binned.copy()).float().unsqueeze(0).unsqueeze(0)
-				print(self.ee_history)
+				# print(self.ee_history)
 				action_pred = self.actor(depth_nn, 
-										self.z, 
+										self.zs, 
 						torch.from_numpy(self.ee_history).float().unsqueeze(0)).squeeze(0)
-				action_pred[0] /= 50  # scaling
-				action_pred[1] /= 30  # scaling
+				action_pred[0] /= 60  # scaling
+				action_pred[1] /= 35  # scaling
 				if action_pred[0] > 0.02:
 					action_pred[0] = 0.02
 				print(action_pred)
@@ -153,7 +161,7 @@ class CameraEnv(object):
 
 
 if __name__ == '__main__':
-	seed = 1000
+	seed = 10000
 	np.random.seed(seed)
 	torch.manual_seed(seed)
 
