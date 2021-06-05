@@ -16,7 +16,7 @@ from skimage.measure import block_reduce
 
 import rospy
 import ros_numpy  # for converting Image to np array
-from nn_policy import PolicyNet
+from pac_policy import PolicyNet
 
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Image

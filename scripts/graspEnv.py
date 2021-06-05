@@ -13,10 +13,8 @@ import rospy
 import tf
 import PyKDL
 import ropy as rp
-# from std_msgs.msg import String
 from geometry_msgs.msg import Vector3, Quaternion, TransformStamped, Twist, Pose
 from franka_msgs.msg import FrankaState, Errors as FrankaErrors
-# from tf_conversions import posemath
 from rviz_tools import RvizMarkers
 from utils_geom import quatMult, euler2quat
 
@@ -83,7 +81,7 @@ class GraspEnv(object):
 		# startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
 		# print(startQuat)
 
-		z_offset = 0.02
+		z_offset = 0.015
 		# z_offset = 0.03
 
 		# print("============ Press Enter to move to initial pose...")
@@ -163,12 +161,6 @@ class GraspEnv(object):
 		# start_joint_angles = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
 		# self.pc.goto_joints(start_joint_angles)
 		# self.pc.set_gripper(0.1)
-
-		# if not grasp_ret or self.ROBOT_ERROR_DETECTED:
-		# 	rospy.logerr('Something went wrong, aborting this run')
-		# 	if self.ROBOT_ERROR_DETECTED:
-		# 		self.__recover_robot_from_error()
-		# 	continue
 
 		return 1
 

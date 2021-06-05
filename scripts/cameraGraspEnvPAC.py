@@ -15,7 +15,7 @@ import datetime
 
 import rospy
 import ros_numpy  # for converting Image to np array
-from nn_policy import PolicyNetGrasp
+from pac_policy import PolicyNetGrasp
 
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Image
@@ -54,9 +54,7 @@ class CameraEnv(object):
 				img_size=128).to('cpu')
 		# actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_12/550.pt'
 		actor_path = '/home/allen/PAC-Imitation/model/grasp_bc_13/800.pt'
-		self.actor.load_state_dict(torch.load(
-			actor_path, 	
-			map_location=torch.device('cpu')))
+		self.actor.load_state_dict(torch.load(actor_path, map_location=torch.device('cpu')))
 		# training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_8/train_details'
 		training_details_dic_path = '/home/allen/PAC-Imitation/result/grasp_pac_12/train_details'
 		training_details_dic = torch.load(training_details_dic_path)

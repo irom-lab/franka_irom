@@ -32,7 +32,7 @@
     </node>
 
 	<!-- Main script-->
-	<node name="camera_env" pkg="franka_irom" type="cameraPushEnv.py" output="screen"/>
+	<node name="camera_env" pkg="franka_irom" type="cameraGraspEnvDRPL.py" output="screen"/>
 
 </launch>
 
