@@ -80,9 +80,9 @@ class GraspEnv(object):
 
 		# startQuat = quatMult(array([1.0, 0.0, 0.0, 0.0]), euler2quat([np.pi/4,0,0]))
 		# print(startQuat)
-
-		z_offset = 0.015
-		# z_offset = 0.03
+		x_offset = 0.01
+		y_offset = 0.005
+		z_offset = 0.013
 
 		# print("============ Press Enter to move to initial pose...")
 		# raw_input()
@@ -104,7 +104,7 @@ class GraspEnv(object):
 			if self.ROBOT_ERROR_DETECTED:
 				self.__recover_robot_from_error()
 			res = self.grasp_infer_srv()
-			target_pos = array([res.pos.x, res.pos.y, res.pos.z+z_offset])
+			target_pos = array([res.pos.x+x_offset, res.pos.y+y_offset, res.pos.z+z_offset])
 			target_yaw = res.yaw
 			print(target_pos, target_yaw)
 

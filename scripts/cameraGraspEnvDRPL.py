@@ -60,7 +60,9 @@ class CameraEnv(object):
 		self.fcn = FCN(inner_channels=self.inner_channels, 
                  		out_channels=1,
                         img_size=self.img_size).to('cpu')
-		model_path = '/home/allen/data/wasserstein/3D/ad_grasp_8c2/policy_model/epoch_13000_step_5_acc_0.727.pt'
+		# model_path = '/home/allen/data/wasserstein/3D/ad_grasp_8c2/policy_model/epoch_13000_step_5_acc_0.727.pt'
+		# model_path = '/home/allen/data/wasserstein/3D/no_grasp_8c1/policy_model/epoch_14_step_3_acc_0.820.pt'
+		model_path = '/home/allen/data/wasserstein/3D/dr_grasp_8c1/policy_model/epoch_13_step_6_acc_0.812.pt'
 		self.fcn.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
 		for _, param in self.fcn.named_parameters():
 			param.requires_grad = False
@@ -117,10 +119,11 @@ class CameraEnv(object):
 		xy_orig[0] += 0.5
 
 		# Visualize
-		f, axarr = plt.subplots(1,2) 
+		f, axarr = plt.subplots(1,2)
+		print(px, py, xy_orig[0], xy_orig[1], z_target_ee, theta)
 		axarr[0].imshow(self.depth_rect, cmap='Greys', interpolation='nearest')
 		axarr[1].imshow(self.depth_final, cmap='Greys', interpolation='nearest')
-		axarr[1].scatter(py, px, s=30)
+		axarr[1].scatter(px, 128-py, s=30)
 		plt.show()
 
 		# Respond
@@ -130,8 +133,8 @@ class CameraEnv(object):
 
 		# Save pose
 		x = datetime.datetime.now()
-		np.savez('/home/allen/data/grasp_exp_0704/'+x.strftime("%X"), depth_rect=self.depth_rect, 
-			depth_binned=self.depth_binned,
+		np.savez('/home/allen/data/drpl_grasp_0607/'+x.strftime("%X"), depth_rect=self.depth_rect, 
+			depth_final=self.depth_final,
 			target_pos=[xy_orig[0], xy_orig[1], z_target_ee],
 			target_yaw=theta)
 
